@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       slug:
-        description: 'intent slug to (re)generate a spec for, e.g. claims-status-visibility'
+        description: 'intent slug to generate a spec for, e.g. claims-status-visibility (skipped if spec.md already exists — amend it by hand instead)'
         required: true
 
 permissions:
