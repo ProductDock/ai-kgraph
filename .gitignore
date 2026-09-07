@@ -1,0 +1,20 @@
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+
+# Scratch files written by the CI workflows into the runner workspace
+# (spec-from-intent.yml, plan-ready.yml)
+changed.txt
+todo.txt
+specs.txt
+issues.txt
+concerns.md
+pr-body.md
+body.md
+
+# Local Claude Code state (settings.local.json is per-machine; skills are shared)
+.claude/settings.local.json

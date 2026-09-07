@@ -1,0 +1,144 @@
+# Gate 2 → Stage 3 handoff: when an approved spec.md lands on main, summon an engineer.
+#
+# This workflow deliberately does NOT write plan.md. plan.md is the artifact of an
+# interactive plan-mode session where the engineer interrogates the plan about breaking
+# changes and risk (playbook lesson 4) — that argument is the value, and a plan nobody
+# questioned is not an approval record. So we automate the summons, not the plan.
+#
+# See docs/plan-handoff.md.
+
+name: plan-ready
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'intent/**/spec.md'
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: 'intent slug to raise a plan task for'
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  summon-engineer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find newly approved specs
+        id: find
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.slug }}" ]; then
+            printf 'intent/%s/spec.md\n' "${{ inputs.slug }}" > specs.txt
+          else
+            git diff --name-only --diff-filter=A \
+              "${{ github.event.before }}" "${{ github.sha }}" \
+              -- 'intent/**/spec.md' > specs.txt
+          fi
+          echo "count=$(wc -l < specs.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          cat specs.txt
+
+      - name: Open the plan task
+        if: steps.find.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Optional repo variable: GitHub handle to assign, e.g. a tech lead who
+          # distributes the work. Left unassigned if unset.
+          ASSIGNEE: ${{ vars.PLAN_ASSIGNEE }}
+        run: |
+          set -euo pipefail
+          while read -r spec; do
+            dir="$(dirname "$spec")"
+            slug="$(basename "$dir")"
+            title="$(sed -n 's/^# Intent: //p' "$dir/intent.md" | head -1)"
+            title="${title:-$slug}"
+
+            concerns="$(sed -n '/^## Areas of concern/,$p' "$spec" \
+              | grep -viE '^(## Areas of concern|None\.?|\s*)$' || true)"
+
+            cat > body.md <<BODY
+          **Spec approved — ready to plan.** Stage 3 of the [AI-Native SDLC](https://academy.claude.com/courses/ai-native-sdlc-playbook/plan-mode).
+
+          | | |
+          |---|---|
+          | Intent | \`$dir/intent.md\` |
+          | Spec | \`$spec\` |
+          | Approved by | @${{ github.actor }} |
+          | Commit | ${{ github.sha }} |
+
+          ## How to start
+
+          Open Claude Code in this repo and run the \`plan-from-spec\` skill:
+
+          \`\`\`
+          /plan-from-spec $slug
+          \`\`\`
+
+          Or by hand — **start in plan mode** (read-only), then:
+
+          \`\`\`
+          Read $dir/intent.md and $spec. Produce an implementation plan covering the
+          files you will change, the sequence of work, the risks, and what will count
+          as proof it works.
+          \`\`\`
+
+          ## Before you accept the plan
+
+          Lesson 4 says the plan is not done until it is interrogated. Ask it, out loud:
+
+          - [ ] What existing behaviour does this break? What depends on the code being changed?
+          - [ ] Which step here is the riskiest, and what happens if it is wrong?
+          - [ ] What is the rollback if this ships and misbehaves?
+          - [ ] Does the plan close every open question the intent left?
+          - [ ] What will count as proof — which command, which assertion, which screenshot?
+          - [ ] Iterate until another engineer could implement it without asking you anything.
+
+          Then commit it as \`$dir/plan.md\` **before** accepting the plan and building.
+          If the implementation later deviates from the plan, update \`plan.md\`.
+          BODY
+
+            if [ -n "$concerns" ]; then
+              {
+                echo
+                echo "## ⚠ Concerns flagged during design"
+                echo
+                echo "Raised in the spec and carried over — resolve with the policy owner"
+                echo "before or during planning, not after implementation:"
+                echo
+                printf '%s\n' "$concerns"
+              } >> body.md
+            fi
+
+            args=(--title "plan: $title" --body-file body.md --label plan --label ready-to-plan)
+            # Note: plain `[ ... ] && args+=(...)` would abort the job under `set -e`
+            # whenever the test is false.
+            if [ -n "${ASSIGNEE:-}" ]; then args+=(--assignee "$ASSIGNEE"); fi
+            if [ -n "$concerns" ]; then args+=(--label needs-policy-owner); fi
+            url="$(gh issue create "${args[@]}")"
+            echo "::notice::plan task for $slug → $url"
+            echo "$url" >> issues.txt
+          done < specs.txt
+
+      - name: Notify the team channel
+        if: steps.find.outputs.count != '0'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "::notice::SLACK_WEBHOOK_URL not set — skipping notification"
+            exit 0
+          fi
+          while read -r url; do
+            payload="$(printf '{"text":"Spec approved, ready to plan: %s"}' "$url")"
+            curl -sS -X POST -H 'Content-Type: application/json' \
+              -d "$payload" "$SLACK_WEBHOOK_URL" >/dev/null
+          done < issues.txt
