@@ -5,6 +5,12 @@
 # changes and risk (playbook lesson 4) — that argument is the value, and a plan nobody
 # questioned is not an approval record. So we automate the summons, not the plan.
 #
+# Specs get approved more than once: an engineer who finds the spec incomplete during
+# planning sends it back to the product owner, and the amended spec merges through the
+# same gate. So this fires on modified specs too. First approval opens the plan task;
+# every later one comments on that task (reopening it if it had been closed) rather than
+# opening a duplicate.
+#
 # See docs/plan-handoff.md.
 
 name: plan-ready
@@ -17,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       slug:
-        description: 'intent slug to raise a plan task for'
+        description: 'intent slug to raise or refresh a plan task for'
         required: true
 
 permissions:
@@ -32,37 +38,135 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Find newly approved specs
+      - name: Find approved specs
         id: find
         run: |
           set -euo pipefail
           if [ -n "${{ inputs.slug }}" ]; then
             printf 'intent/%s/spec.md\n' "${{ inputs.slug }}" > specs.txt
+            echo "base=" >> "$GITHUB_OUTPUT"
           else
-            git diff --name-only --diff-filter=A \
-              "${{ github.event.before }}" "${{ github.sha }}" \
-              -- 'intent/**/spec.md' > specs.txt
+            # github.event.before is all-zeros on a branch's first push and stale after a
+            # force-push; fall back to the pushed commit's parent so the job never dies on
+            # an unresolvable base.
+            base="${{ github.event.before }}"
+            if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              base="$(git rev-parse --verify --quiet "${{ github.sha }}^" || true)"
+            fi
+            if [ -n "$base" ]; then
+              # AM, not A: an amended spec re-approved after planning is a modification.
+              git diff --name-only --diff-filter=AM \
+                "$base" "${{ github.sha }}" -- 'intent/**/spec.md' > specs.txt
+            else
+              git ls-tree -r --name-only "${{ github.sha }}" -- intent \
+                | grep '/spec\.md$' > specs.txt || true
+            fi
+            echo "base=$base" >> "$GITHUB_OUTPUT"
           fi
-          echo "count=$(wc -l < specs.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "count=$(grep -c . specs.txt || true)" >> "$GITHUB_OUTPUT"
           cat specs.txt
 
-      - name: Open the plan task
+      - name: Raise or refresh the plan task
         if: steps.find.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           # Optional repo variable: GitHub handle to assign, e.g. a tech lead who
           # distributes the work. Left unassigned if unset.
           ASSIGNEE: ${{ vars.PLAN_ASSIGNEE }}
+          BASE: ${{ steps.find.outputs.base }}
         run: |
           set -euo pipefail
+          : > notify.txt
+
           while read -r spec; do
+            [ -n "$spec" ] || continue
             dir="$(dirname "$spec")"
             slug="$(basename "$dir")"
-            title="$(sed -n 's/^# Intent: //p' "$dir/intent.md" | head -1)"
+            title="$(sed -n 's/^# Intent: //p' "$dir/intent.md" 2>/dev/null | head -1)"
             title="${title:-$slug}"
 
             concerns="$(sed -n '/^## Areas of concern/,$p' "$spec" \
               | grep -viE '^(## Areas of concern|None\.?|\s*)$' || true)"
+
+            # Does a plan task already exist for this spec? Search the body for the spec
+            # path first (how every issue this workflow opens names it), then fall back to
+            # a title match, since code search can lag behind a fresh issue by a minute.
+            issue="$(gh issue list --state all --label plan --limit 1 \
+              --search "\"$spec\" in:body" --json number --jq '.[0].number // empty' \
+              2>/dev/null || true)"
+            if [ -z "$issue" ]; then
+              issue="$(gh issue list --state all --label plan --limit 200 \
+                --json number,title \
+                --jq "[.[] | select(.title == \"plan: $title\")] | .[0].number // empty" \
+                2>/dev/null || true)"
+            fi
+
+            if [ -n "$issue" ]; then
+              # Re-approval: the spec changed after the plan task was already raised.
+              stat=""
+              if [ -n "${BASE:-}" ]; then
+                stat="$(git diff --stat "$BASE" "${{ github.sha }}" -- "$spec" || true)"
+              fi
+
+              cat > comment.md <<COMMENT
+          **Spec updated and re-approved on \`main\`.** Re-read it before planning further — the version you planned against is no longer the approved one.
+
+          | | |
+          |---|---|
+          | Spec | \`$spec\` |
+          | Approved by | @${{ github.actor }} |
+          | Commit | ${{ github.sha }} |
+
+          \`\`\`
+          ${stat:-(diff stat unavailable)}
+          \`\`\`
+
+          <details><summary>What changed</summary>
+
+          \`\`\`diff
+          COMMENT
+
+              # Appended, never interpolated into the heredoc: spec diffs contain backticks
+              # and $(...) that an unquoted heredoc would execute.
+              if [ -n "${BASE:-}" ]; then
+                git diff "$BASE" "${{ github.sha }}" -- "$spec" | head -200 >> comment.md || true
+              else
+                echo "(unavailable — run: git log -p -- $spec)" >> comment.md
+              fi
+
+              cat >> comment.md <<COMMENT
+          \`\`\`
+
+          </details>
+
+          If \`$dir/plan.md\` is already committed, update it in the same PR as the implementation and say why it moved — a stale plan reads as the approved intent at later review stages.
+          COMMENT
+
+              if [ -n "$concerns" ]; then
+                {
+                  echo
+                  echo "## ⚠ Concerns still flagged in the spec"
+                  echo
+                  printf '%s\n' "$concerns"
+                } >> comment.md
+              fi
+
+              gh issue comment "$issue" --body-file comment.md >/dev/null
+              # The amended spec has landed, so whatever the plan was blocked on is
+              # resolved as far as this gate can tell. Adding/removing labels is best
+              # effort: a missing label must not fail the handoff.
+              gh issue edit "$issue" --add-label spec-revised >/dev/null 2>&1 || true
+              gh issue edit "$issue" --remove-label blocked-on-spec >/dev/null 2>&1 || true
+              state="$(gh issue view "$issue" --json state --jq .state)"
+              if [ "$state" = "CLOSED" ]; then
+                gh issue reopen "$issue" \
+                  --comment "Reopened: the spec was amended and re-approved after this task was closed." >/dev/null
+              fi
+              url="$(gh issue view "$issue" --json url --jq .url)"
+              echo "::notice::spec re-approved for $slug → $url"
+              printf 'Spec updated and re-approved: %s\n' "$url" >> notify.txt
+              continue
+            fi
 
             cat > body.md <<BODY
           **Spec approved — ready to plan.** Stage 3 of the [AI-Native SDLC](https://academy.claude.com/courses/ai-native-sdlc-playbook/plan-mode).
@@ -103,6 +207,18 @@ jobs:
 
           Then commit it as \`$dir/plan.md\` **before** accepting the plan and building.
           If the implementation later deviates from the plan, update \`plan.md\`.
+
+          ## If the spec turns out to be wrong
+
+          Do not plan around a gap. Instead:
+
+          1. Comment here with what the spec is missing or what it would break.
+          2. Add the **\`blocked-on-spec\`** label to this issue, and link the amendment PR.
+          3. Amend \`$spec\` (or \`$dir/intent.md\` if the gap is in what was *wanted*) and
+             open a PR for the product owner. Merging it is gate 2 again.
+
+          The re-approval lands back on this issue as a comment and clears the label. The
+          block belongs in this trail, not silently patched over in \`plan.md\`.
           BODY
 
             if [ -n "$concerns" ]; then
@@ -124,7 +240,7 @@ jobs:
             if [ -n "$concerns" ]; then args+=(--label needs-policy-owner); fi
             url="$(gh issue create "${args[@]}")"
             echo "::notice::plan task for $slug → $url"
-            echo "$url" >> issues.txt
+            printf 'Spec approved, ready to plan: %s\n' "$url" >> notify.txt
           done < specs.txt
 
       - name: Notify the team channel
@@ -133,12 +249,14 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           set -euo pipefail
+          [ -s notify.txt ] || exit 0
           if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
             echo "::notice::SLACK_WEBHOOK_URL not set — skipping notification"
             exit 0
           fi
-          while read -r url; do
-            payload="$(printf '{"text":"Spec approved, ready to plan: %s"}' "$url")"
+          while read -r line; do
+            [ -n "$line" ] || continue
+            payload="$(jq -nc --arg t "$line" '{text:$t}')"
             curl -sS -X POST -H 'Content-Type: application/json' \
               -d "$payload" "$SLACK_WEBHOOK_URL" >/dev/null
-          done < issues.txt
+          done < notify.txt

@@ -54,6 +54,24 @@ given, list `intent/*/` folders that have a `spec.md` but no `plan.md` and ask w
    the same PR and say why. A stale plan is worse than none — later review stages read
    it as the approved intent.
 
+## When the spec is wrong
+
+Planning is where an incomplete spec surfaces — expected, not a process failure. Do not
+absorb the gap into the plan. Stop and hand it back:
+
+1. Comment on the `plan: <slug>` issue with what is missing, or what existing behaviour
+   the spec as written would break.
+2. Label the issue `blocked-on-spec` and link the amendment PR from it.
+3. Amend `intent/<slug>/spec.md` — or `intent/<slug>/intent.md` if what was *wanted* was
+   wrong or incomplete, since amending only the spec leaves the intent lying about the
+   ask. Open a PR; the product owner merging it is gate 2 again.
+4. When it lands, `plan-ready` comments the spec diff on the issue and clears
+   `blocked-on-spec`. Replan against the new version.
+
+A breaking change is different: that is a normal plan output, not a blocker. It goes in
+the plan's **Risks** section with its rollback. Escalate to a *new intent* only when the
+break violates policy — `breach ⇒ new intent.md` in the playbook.
+
 ## Rules
 
 - Never write `plan.md` for a spec that has not been merged to the default branch.

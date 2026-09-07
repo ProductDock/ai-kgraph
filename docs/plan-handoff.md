@@ -34,7 +34,9 @@ budget before it exists.
         │ push to main, path intent/**/spec.md
         ▼
   workflow: plan-ready                    (.github/workflows/plan-ready.yml)
-        ├─ opens issue "plan: <title>", labels plan + ready-to-plan
+        ├─ first approval → opens issue "plan: <title>", labels plan + ready-to-plan
+        ├─ re-approval    → comments the spec diff on that issue, labels spec-revised,
+        │                   reopens it if it had been closed  (no duplicate task)
         ├─ carries over any concerns flagged in the spec
         ├─ assigns ${{ vars.PLAN_ASSIGNEE }} if set
         └─ posts to Slack if SLACK_WEBHOOK_URL is set
@@ -52,9 +54,40 @@ Zero model calls in the workflow. It closes the "did anyone notice this spec lan
 gap, which is the real failure at this boundary, without taking the plan away from the
 engineer.
 
+## Specs get approved more than once
+
+Planning is where an incomplete spec is found — that is lesson 4 working, not a process
+failure. The engineer does not plan around the gap: they amend `spec.md` (or `intent.md`,
+if what was *wanted* was wrong), open a PR, and the product owner re-approves by merging
+it. Same gate, second pass.
+
+So `plan-ready` triggers on modified specs too (`--diff-filter=AM`), and distinguishes
+the two cases by whether a plan task already exists rather than by how git classified the
+change:
+
+- **no existing task** → open one, as on first approval
+- **task exists** → comment on it with the spec diff, label it `spec-revised`, and reopen
+  it if it had already been closed
+
+The engineer's half is not automated, deliberately — noticing that a spec is wrong is
+the judgement being paid for. The skill tells them to comment what is missing, label the
+issue `blocked-on-spec`, and link the amendment PR; the landed re-approval clears that
+label. `needs-policy-owner` covers concerns raised at *design* time; `blocked-on-spec`
+covers concerns raised at *plan* time, which is where the trail used to just stop.
+
+Regenerating the amended spec in CI is intentionally not offered: `spec-from-intent`
+skips any intent that already has a `spec.md`, on the dispatch path too. An amendment is
+a hand-edited PR, by the engineer who found the gap.
+
+That keeps one issue per intent as the whole audit trail — approved, sent back, amended,
+re-approved — instead of a second task competing with the first. The engineer gets told
+that the spec they planned against is no longer the approved one, which is the failure
+this boundary actually produces once specs start moving.
+
 ## Setup
 
-- Labels `plan`, `ready-to-plan` (and `needs-policy-owner`, shared with the spec flow).
+- Labels `plan`, `ready-to-plan`, `spec-revised`, `blocked-on-spec` (and
+  `needs-policy-owner`, shared with the spec flow).
 - Optional repo variable `PLAN_ASSIGNEE` — a GitHub handle, typically the tech lead who
   distributes work. Unset means the issue is unassigned.
 - Optional secret `SLACK_WEBHOOK_URL`. Lesson 13 notes Claude Tag in Slack as the richer
