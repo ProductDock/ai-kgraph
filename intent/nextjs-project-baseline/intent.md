@@ -2,7 +2,7 @@
 
 - **Originator:** Nemanja (nemanja.vasic@productdock.com)
 - **Date:** 2026-09-09
-- **Status:** awaiting product owner review
+- **Status:** approved
 
 ## Problem
 
