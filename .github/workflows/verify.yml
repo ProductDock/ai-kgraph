@@ -1,0 +1,36 @@
+# Runs the app's own checks — lint, typecheck, test, build — on every push to main and
+# every PR. Additive: does not touch spec-from-intent.yml or plan-ready.yml.
+#
+# Pins actions by commit SHA, unlike the existing workflows' mutable @v4 tags (spec §8.8,
+# C-9) — new workflows added here take a stricter posture deliberately.
+
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+        continue-on-error: true

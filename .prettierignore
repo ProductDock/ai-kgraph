@@ -1,0 +1,10 @@
+.next/
+package-lock.json
+src/components/ui/
+
+# Pre-existing SDLC trees this change deliberately does not touch.
+docs/
+intent/
+.claude/
+.github/
+README.md

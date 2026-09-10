@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Role-named design tokens (spec §7.3). These hex values are the `dataviz`
+ * skill's brand-neutral placeholder palette, not ai-kgraph brand colours —
+ * see CLAUDE.md. A brand swap is a values-only edit of this block.
+ */
+:root {
+  color-scheme: light;
+
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --border: rgb(11 11 11 / 0.1);
+  --gridline: #e1e0d9;
+
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+
+  --focus-ring: #2a78d6;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Dark values declared under both the media query and [data-theme], so an
+   explicit user choice beats the OS setting in both directions. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --border: rgb(255 255 255 / 0.1);
+    --gridline: #2c2c2a;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --border: rgb(255 255 255 / 0.1);
+  --gridline: #2c2c2a;
+}
+
+/* Bridges the role-named tokens above onto the semantic names the vendored
+   shadcn components in src/components/ui/** expect. Only the names those
+   components actually use are mapped — see CLAUDE.md. */
+@theme inline {
+  --font-sans: var(--font-sans);
+
+  --color-background: var(--page);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--surface-1);
+  --color-card-foreground: var(--text-primary);
+  --color-primary: var(--text-primary);
+  --color-primary-foreground: var(--page);
+  --color-secondary: var(--surface-1);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--surface-1);
+  --color-muted-foreground: var(--text-muted);
+  --color-destructive: var(--status-critical);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--focus-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
