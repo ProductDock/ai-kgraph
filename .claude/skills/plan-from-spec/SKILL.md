@@ -1,6 +1,6 @@
 ---
 name: plan-from-spec
-description: Start a Stage 3 build session from an approved spec — load intent.md and spec.md in plan mode, interrogate the plan about breaking changes and risk, then commit it as plan.md before implementing. Use when picking up a "plan: <slug>" issue, when asked to start work on an approved spec, or whenever someone says "let's implement <slug>", "start on this spec", or "write the plan".
+description: 'Start a Stage 3 build session from an approved spec — load intent.md and spec.md in plan mode, interrogate the plan about breaking changes and risk, then commit it as plan.md before implementing. Use when picking up a "plan: <slug>" issue, when asked to start work on an approved spec, or whenever someone says "let''s implement <slug>", "start on this spec", or "write the plan".'
 ---
 
 # Plan from an approved spec
