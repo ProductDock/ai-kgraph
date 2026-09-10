@@ -7,6 +7,10 @@
 # protection (playbook lesson 12). The product owner reviewing that PR is the
 # Stage 2 review step (lesson 3).
 #
+# One intent = one spec = one PR. A push that merges several intents fans out into
+# one matrix job per intent, so every spec gets its own review thread and its own
+# 'Areas of concern' triage. Batching them into a single PR loses review signal.
+#
 # See docs/spec-from-intent-automation.md for the design and the manual fallback.
 
 name: spec-from-intent
@@ -26,14 +30,12 @@ permissions:
   contents: write
   pull-requests: write
 
-concurrency:
-  # One spec run per intent at a time; never cancel a run mid-generation.
-  group: spec-from-intent-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  generate-spec:
+  find:
     runs-on: ubuntu-latest
+    outputs:
+      slugs: ${{ steps.find.outputs.slugs }}
+      count: ${{ steps.find.outputs.count }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,14 +43,24 @@ jobs:
 
       - name: Find approved intents needing a spec
         id: find
+        env:
+          # Bound through the environment, not interpolated into the script: a slug is
+          # attacker-controllable via workflow_dispatch.
+          SLUG: ${{ inputs.slug }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.slug }}" ]; then
-            printf 'intent/%s/intent.md\n' "${{ inputs.slug }}" > changed.txt
+          if [ -n "$SLUG" ]; then
+            printf 'intent/%s/intent.md\n' "$SLUG" > changed.txt
+          elif ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            # Force-push or an unreachable base: we cannot say what this push changed,
+            # so fall back to every spec-less intent on the branch rather than failing.
+            echo "::warning::$BEFORE is unreachable — scanning all intents instead"
+            git ls-files 'intent/*/intent.md' > changed.txt
           else
             git diff --name-only --diff-filter=AM \
-              "${{ github.event.before }}" "${{ github.sha }}" \
-              -- 'intent/**/intent.md' > changed.txt
+              "$BEFORE" "$AFTER" -- 'intent/**/intent.md' > changed.txt
           fi
           # Merging to main IS the product owner's approval (branch protection enforces
           # the gate), so the only Status worth blocking on is a literal 'draft' pushed
@@ -67,78 +79,96 @@ jobs:
             fi
             echo "$f" >> todo.txt
           done < changed.txt
-          echo "count=$(wc -l < todo.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
           cat todo.txt
+          slugs="$(cut -d/ -f2 todo.txt | jq -Rsc 'split("\n") | map(select(length > 0))')"
+          echo "slugs=$slugs" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq 'length' <<<"$slugs")" >> "$GITHUB_OUTPUT"
+
+  spec:
+    needs: find
+    if: needs.find.outputs.count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      # One intent failing must not deny the others their spec.
+      fail-fast: false
+      matrix:
+        slug: ${{ fromJson(needs.find.outputs.slugs) }}
+    concurrency:
+      # One spec run per intent at a time; never cancel a run mid-generation.
+      group: spec-from-intent-${{ matrix.slug }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Claude Code
-        if: steps.find.outputs.count != '0'
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Generate spec.md
-        if: steps.find.outputs.count != '0'
         env:
           # Or the Bedrock / Vertex / Foundry equivalents — see lesson 12.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
-          while read -r intent; do
-            dir="$(dirname "$intent")"
-            # The standard prompt, verbatim from lesson 3, with the file path bound in.
-            claude -p "Read $intent and produce a requirements and design spec for \
+          dir="intent/$SLUG"
+          intent="$dir/intent.md"
+          test -f "$intent" || { echo "::error::$intent does not exist"; exit 1; }
+
+          # The standard prompt, verbatim from lesson 3, with the file path bound in.
+          claude -p "Read $intent and produce a requirements and design spec for \
           integrating it into our existing codebase. Apply the skills available to you so \
           the plan conforms to our brand guidelines, security policies and UX standards. \
           Document the spec fully as $dir/spec.md, ready to hand to the engineering team. \
           Describe clearly any areas of concern, especially where you cannot satisfy \
           contradicting policies. End the file with a '## Areas of concern' section; if \
           there are none, write 'None.' there." \
-              --model claude-opus-5 \
-              --allowed-tools 'Read,Grep,Glob,Skill,Write' \
-              --permission-mode acceptEdits \
-              > "$RUNNER_TEMP/session.log" 2>&1 || {
-                echo "::error::spec generation failed for $intent"; cat "$RUNNER_TEMP/session.log"; exit 1; }
+            --model claude-opus-5 \
+            --allowed-tools 'Read,Grep,Glob,Skill,Write' \
+            --permission-mode acceptEdits \
+            > "$RUNNER_TEMP/session.log" 2>&1 || {
+              echo "::error::spec generation failed for $intent"; cat "$RUNNER_TEMP/session.log"; exit 1; }
 
-            test -s "$dir/spec.md" || { echo "::error::no spec.md written for $intent"; exit 1; }
+          test -s "$dir/spec.md" || { echo "::error::no spec.md written for $intent"; exit 1; }
 
-            # Provenance: the spec, the prompt, and the skill versions that produced it
-            # all belong in version control (lesson 3, governance).
-            {
-              echo "intent: $intent"
-              echo "generated_at: $(date -u +%FT%TZ)"
-              echo "model: claude-opus-5"
-              echo "workflow_run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-              echo "repo_sha: ${{ github.sha }}"
-              echo "skills_sha: $(git log -1 --format=%H -- .claude/skills || echo none)"
-            } > "$dir/spec.provenance.yml"
+          # Provenance: the spec, the prompt, and the skill versions that produced it
+          # all belong in version control (lesson 3, governance).
+          {
+            echo "intent: $intent"
+            echo "generated_at: $(date -u +%FT%TZ)"
+            echo "model: claude-opus-5"
+            echo "workflow_run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "repo_sha: ${{ github.sha }}"
+            echo "skills_sha: $(git log -1 --format=%H -- .claude/skills || echo none)"
+          } > "$dir/spec.provenance.yml"
 
-            # The merge approved it; make the artifact say so.
-            sed -i -E 's/^(\s*-?\s*\*\*Status:\*\*).*/\1 approved/i' "$intent"
-          done < todo.txt
+          # The merge approved it; make the artifact say so.
+          sed -i -E 's/^(\s*-?\s*\*\*Status:\*\*).*/\1 approved/i' "$intent"
 
       - name: Open PR for product owner review
-        if: steps.find.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
+          SLUG: ${{ matrix.slug }}
         run: |
           set -euo pipefail
-          slug="$(head -1 todo.txt | cut -d/ -f2)"
-          branch="spec/$slug-${{ github.run_id }}"
+          branch="spec/$SLUG-${{ github.run_id }}"
           git config user.name  'claude-spec-bot'
           git config user.email 'claude-spec-bot@users.noreply.github.com'
           git checkout -b "$branch"
-          git add 'intent/'
+          git add "intent/$SLUG"
           git commit -F - <<COMMIT
-          spec: $slug
+          spec: $SLUG
 
-          Generated from the intents listed below by spec-from-intent.
-          $(cat todo.txt)
+          Generated from intent/$SLUG/intent.md by spec-from-intent.
           COMMIT
           git push -u origin "$branch"
 
           # Surface flagged concerns in the PR body so the product owner sees them first.
-          sed -n '/^## Areas of concern/,$p' "intent/$slug/spec.md" > concerns.md || true
+          sed -n '/^## Areas of concern/,$p' "intent/$SLUG/spec.md" > concerns.md || true
 
-          cat > pr-body.md <<'HEAD'
-          Generated by `spec-from-intent` (Stage 2 — [lesson 3](https://academy.claude.com/courses/ai-native-sdlc-playbook/requirements-and-design)).
+          cat > pr-body.md <<HEAD
+          Generated by \`spec-from-intent\` (Stage 2 — [lesson 3](https://academy.claude.com/courses/ai-native-sdlc-playbook/requirements-and-design)) from \`intent/$SLUG/intent.md\`.
 
           **Product owner, before approving:** does this spec solve the problem the intent
           describes, and does it close the intent's open questions?
@@ -151,7 +181,7 @@ jobs:
           policy owner *before* engineering picks this up.
           TAIL
 
-          gh pr create --title "spec: $slug" --body-file pr-body.md \
+          gh pr create --title "spec: $SLUG" --body-file pr-body.md \
             --label spec --label needs-po-review
           if grep -qviE '^(## Areas of concern|None\.?|\s*)$' concerns.md; then
             gh pr edit --add-label needs-policy-owner
