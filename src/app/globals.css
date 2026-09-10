@@ -3,60 +3,83 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Role-named design tokens (spec §7.3). These hex values are the `dataviz`
- * skill's brand-neutral placeholder palette, not ai-kgraph brand colours —
- * see CLAUDE.md. A brand swap is a values-only edit of this block.
+ * Role-named design tokens (spec §7.3). Values are ProductDock's brand
+ * palette per the `design-system` skill, extracted from productdock.com
+ * 2026-09-10 — see .claude/skills/design-system/SKILL.md. A brand swap is a
+ * values-only edit of this block; do not rename tokens or the bridge below.
+ *
+ * --accent-secondary (brand orange) has no shadcn-facing slot yet — it is
+ * a plain role token for hand-authored components/common/** to opt into
+ * (e.g. `bg-[var(--accent-secondary)]`), not bridged in @theme inline below.
+ *
+ * Status colors are unrelated to the brand extraction (ProductDock's site
+ * carries no semantic status system) and are left as the `dataviz` skill's
+ * placeholders — see CLAUDE.md's "Not organisational policy" note.
  */
 :root {
   color-scheme: light;
 
-  --page: #f9f9f7;
-  --surface-1: #fcfcfb;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --border: rgb(11 11 11 / 0.1);
-  --gridline: #e1e0d9;
+  --page: #ffffff;
+  --surface-1: #f1f5f8;
+  --text-primary: #0a0c0e;
+  --text-secondary: #353c43;
+  --text-muted: #646d75;
+  --border: #dce3e9;
+  --gridline: #e5e7eb;
 
   --status-good: #0ca30c;
   --status-warning: #fab219;
   --status-serious: #ec835a;
   --status-critical: #d03b3b;
 
-  --focus-ring: #2a78d6;
+  --focus-ring: #027ac2;
+  --accent-secondary: #ea592a;
+  --accent-secondary-hover: #c44821;
 
-  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: var(--font-poppins), system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 /* Dark values declared under both the media query and [data-theme], so an
-   explicit user choice beats the OS setting in both directions. */
+   explicit user choice beats the OS setting in both directions. Only the
+   light-theme-derived neutrals invert; brand colors (--focus-ring,
+   --accent-secondary) stay constant across themes per the design-system
+   skill — ProductDock's site has no observed dark theme to extract from. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page: #0d0d0d;
-    --surface-1: #1a1a19;
+    --page: #0a0c0e;
+    --surface-1: #1a1d21;
     --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --border: rgb(255 255 255 / 0.1);
-    --gridline: #2c2c2a;
+    --text-secondary: #c7ccd1;
+    --text-muted: #8a9199;
+    --border: rgb(255 255 255 / 0.12);
+    --gridline: rgb(255 255 255 / 0.08);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d0d0d;
-  --surface-1: #1a1a19;
+  --page: #0a0c0e;
+  --surface-1: #1a1d21;
   --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #898781;
-  --border: rgb(255 255 255 / 0.1);
-  --gridline: #2c2c2a;
+  --text-secondary: #c7ccd1;
+  --text-muted: #8a9199;
+  --border: rgb(255 255 255 / 0.12);
+  --gridline: rgb(255 255 255 / 0.08);
 }
 
 /* Bridges the role-named tokens above onto the semantic names the vendored
    shadcn components in src/components/ui/** expect. Only the names those
-   components actually use are mapped — see CLAUDE.md. */
+   components actually use are mapped — see CLAUDE.md.
+ *
+ * --color-primary is the blue brand accent, not ink: ProductDock's own CTA
+ * button is blue-background/ink-text (design-system skill, "Color" table),
+ * so bg-primary buttons and text-primary links now match the source site.
+ * Body copy still reads as ink via --color-foreground, unaffected.
+ *
+ * --radius-lg/--radius-xl override Tailwind's defaults, not shadcn slots,
+ * to get the two shapes the skill documents: pill for rounded-lg (buttons,
+ * badges) and ~10px for rounded-xl (cards) — no ui/** file is hand-edited. */
 @theme inline {
   --font-sans: var(--font-sans);
 
@@ -64,8 +87,8 @@
   --color-foreground: var(--text-primary);
   --color-card: var(--surface-1);
   --color-card-foreground: var(--text-primary);
-  --color-primary: var(--text-primary);
-  --color-primary-foreground: var(--page);
+  --color-primary: var(--focus-ring);
+  --color-primary-foreground: var(--text-primary);
   --color-secondary: var(--surface-1);
   --color-secondary-foreground: var(--text-primary);
   --color-muted: var(--surface-1);
@@ -74,6 +97,9 @@
   --color-border: var(--border);
   --color-input: var(--border);
   --color-ring: var(--focus-ring);
+
+  --radius-lg: 9999px;
+  --radius-xl: 10px;
 }
 
 @layer base {

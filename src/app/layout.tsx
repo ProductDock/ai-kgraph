@@ -1,6 +1,17 @@
 import type { Metadata } from "next";
+import { Poppins } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+
+// ProductDock brand typeface (design-system skill). `variable` feeds
+// --font-poppins, consumed by --font-sans in globals.css; `display: swap`
+// keeps text visible while it loads.
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-poppins",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "ai-kgraph",
@@ -24,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={poppins.variable}>
       <head>
         {/* Sets data-theme before first paint to avoid a flash of the wrong
             theme (spec §7.3). Runs under CSP Report-Only, so no nonce yet. */}
