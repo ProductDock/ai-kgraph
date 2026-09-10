@@ -1,0 +1,67 @@
+# Stage 5 of the AI-Native SDLC: agentic PR review, run on demand.
+#
+# Deliberately comment-triggered, not automatic on every PR open. Playbook lesson 10
+# describes "all PRs get an identical set of review passes" as the end state, but that
+# assumes REVIEW.md and its severity/exclusion rules have already been exercised enough
+# to trust unattended. Until then, a human decides when a PR is ready for it by
+# commenting `@review` — same posture docs/plan-handoff.md takes on plan.md: automate
+# the summons, not the judgment, until the guardrails around it are proven.
+#
+# See docs/pr-review-automation.md for the design rationale, and REVIEW.md for what
+# gets checked, how findings are ranked, and what's excluded.
+#
+# Findings are posted as PR comments only. They never approve or block on their own —
+# branch protection and a human code-owner stay the actual merge gate (lesson 10).
+
+name: claude-review
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: claude-review-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@review') &&
+      github.event.comment.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve PR head
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr view "${{ github.event.issue.number }}" \
+            --json headRefOid,headRefName \
+            --jq '"sha=" + .headRefOid, "branch=" + .headRefName' \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Run Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          trigger_phrase: '@review'
+          custom_instructions: |
+            Read REVIEW.md at the repo root for the passes to run, severity rules,
+            and exclusions. Apply the nextjs-code-review and security-review skills
+            from .claude/skills/ against the diff for this PR
+            (${{ steps.pr.outputs.branch }} into ${{ github.event.repository.default_branch }}).
+            Post findings as a single PR review comment, most severe first, capped
+            per REVIEW.md. Do not push commits or resolve findings yourself — that is
+            a separate, human-requested step.
