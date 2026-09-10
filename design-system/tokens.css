@@ -1,0 +1,26 @@
+:root {
+  --color-primary: rgb(238, 249, 255);
+  --color-secondary: rgba(0, 0, 0, 0);
+  --font-heading: Poppins;
+  --font-body: Poppins;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 5px;
+  --space-4: 6px;
+  --space-5: 8px;
+  --space-6: 10px;
+  --space-7: 16px;
+  --space-8: 20px;
+  --space-9: 22px;
+  --space-10: 24px;
+  --space-11: 32px;
+  --space-12: 40px;
+  --space-13: 48px;
+  --space-14: 64px;
+  --space-15: 80px;
+  --space-16: 120px;
+  --space-17: 160px;
+  --space-18: 200px;
+  --space-19: 356.594px;
+  --space-20: 384.594px;
+}
