@@ -32,5 +32,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+        env:
+          # Not a secret - inlined at build time, same placeholder as .env.example.
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
       - run: npm audit --audit-level=high
         continue-on-error: true
