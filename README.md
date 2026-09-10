@@ -26,3 +26,25 @@ idea → /write-intent ────────────▶ PR: intent.md ─
 
 Two automated steps, three human gates. `plan.md` stays interactive on purpose
 ([why](docs/plan-handoff.md)).
+
+## The app
+
+`src/` is a Next.js App Router application built around this SDLC tree — nothing above
+moves. It's a foundation, not a product yet: no product screens, no data layer, no auth.
+See [`CLAUDE.md`](CLAUDE.md) for how it's put together.
+
+```bash
+nvm use          # reads .nvmrc
+npm ci
+cp .env.example .env.local
+npm run dev
+```
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the dev server |
+| `npm run build` / `npm start` | Production build / serve |
+| `npm run lint` / `lint:fix` | ESLint |
+| `npm run format` / `format:check` | Prettier |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` / `test:watch` | Vitest |
