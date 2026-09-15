@@ -52,8 +52,12 @@ Observably:
 - A node's colour tells you how deep in the tree it sits — the root is one colour, the
   broad topics another, the level below that another, and so on, the way the originator's
   whiteboard is colour-coded.
-- On a phone, or a machine that cannot render the scene, the page says so plainly rather
-  than showing something broken.
+- You can drag to orbit the graph and scroll to zoom, and clicking a node flies the camera
+  to it so its part of the tree comes into view.
+- Labels are readable on the nodes near you and fade with distance, so the scene never
+  turns into overlapping text.
+- It works on a desktop or a tablet. On a phone, or a machine that cannot render the
+  scene, the page says so plainly rather than showing something broken.
 - Someone on the team who has never seen it can open the page and tell, without being
   told, which areas of AI we have mapped out and which are thin.
 
@@ -141,9 +145,22 @@ That is the whole of it. Nodes, edges, labels, 3D.
   whiteboard: root, broad topics, the level below, and so on. The colours themselves must
   come from the ProductDock palette in `design-system/` — the whiteboard's blue/red/gold
   are the *scheme*, not the hues to ship.
-- **This is a desktop view.** On a phone, or where the 3D scene cannot render, the page
-  states plainly that the view needs a desktop browser. No 2D or text fallback is built —
-  that would be a second view to keep in sync, which is scope deliberately cut.
+- **This is a desktop and tablet view.** Phones are too small for it and are explicitly
+  deferred — they get a plain message, and are dealt with in a later piece of work. The
+  same message covers a machine that cannot render the scene. No 2D or text fallback is
+  built; that would be a second view to keep in sync, which is scope deliberately cut.
+- **Navigation is orbit, zoom and click-to-fly.** Drag rotates the graph, scroll zooms,
+  and clicking a node moves the camera to centre on it and its children — needed because
+  the tree runs four levels deep. Consequence recorded deliberately: the click gesture is
+  now spent on camera focus, so the deferred node popup will need a different gesture when
+  it is built.
+- **Labels fade with distance.** Nodes near the camera show readable titles; distant or
+  occluded ones fade to unlabelled dots and resolve as you approach. Every node still has
+  a title — this is about when it is drawn, not whether it exists.
+- **No accessibility work in this slice, recorded as known debt.** The 3D scene is a
+  canvas: a keyboard user cannot reach the nodes and a screen reader cannot read them.
+  This is an accepted trade to keep the first slice small, not an oversight, and it must
+  be carried forward as debt rather than quietly forgotten.
 - **The page lives at `/graph`.** The home page is left free for an introduction or
   landing page later.
 - Must fit the app baseline already merged in `intent/nextjs-project-baseline` — the
@@ -164,17 +181,15 @@ That is the whole of it. Nodes, edges, labels, 3D.
       a placeholder the originator has not named yet. — *owner: Nemanja*
 - [ ] The four verbatim note-style labels need real topic titles before content work
       starts. — *owner: Nemanja*
-- [ ] How does a person move through the 3D space — orbit, zoom, fly, click-to-focus? Not
-      decided; the reference gives no guidance because it is flat. — *owner: design stage*
-- [ ] Node labels have to stay readable in a 3D scene where nodes sit at different depths
-      and can occlude each other. How is that handled at the far end of the tree? —
-      *owner: design stage*
+- [x] How does a person move through the 3D space? — **Answered:** orbit, zoom, and click
+      a node to fly to it. See Constraints for the gesture consequence.
+- [x] How do labels stay readable at depth? — **Answered:** readable near the camera,
+      fading with distance.
+- [x] What is the accessibility floor for this slice? — **Answered:** none, accepted as
+      recorded debt. See Constraints.
 - [x] Does depth in the tree need to be visually encoded? — **Answered:** yes, one colour
       per level, as on the whiteboard. Hues come from the ProductDock palette.
-- [x] What happens on a phone or a low-powered laptop? — **Answered:** desktop-only, with
-      a plain message where the scene cannot render. No fallback view.
-- [ ] Accessibility: a 3D canvas is not reachable by keyboard or screen reader by default.
-      What is the minimum we accept for this first slice? — *owner: design stage*
+- [x] What happens on a phone or a low-powered laptop? — **Answered:** desktop and tablet.
+      Phones are deferred and get a plain message, as does any device that cannot render
+      the scene. No fallback view.
 - [x] Which route does this live under? — **Answered:** `/graph`.
-- [ ] Desktop-only removes the phone case but not the accessibility one — a keyboard user
-      on a desktop still cannot reach a 3D canvas. That stays open below. — *note*
