@@ -49,6 +49,11 @@ Observably:
 - Nodes and the edges between them are laid out in three dimensions — you can move around
   the graph, not just look at a flat picture of it.
 - Every node shows a readable title.
+- A node's colour tells you how deep in the tree it sits — the root is one colour, the
+  broad topics another, the level below that another, and so on, the way the originator's
+  whiteboard is colour-coded.
+- On a phone, or a machine that cannot render the scene, the page says so plainly rather
+  than showing something broken.
 - Someone on the team who has never seen it can open the page and tell, without being
   told, which areas of AI we have mapped out and which are thin.
 
@@ -132,6 +137,15 @@ That is the whole of it. Nodes, edges, labels, 3D.
   are not reserved or stubbed in it now; they get added when those features are actually
   built. Reason: it is a static file we control, so adding fields later is cheap, and
   empty slots would pull the deferred features back into this design.
+- **Depth is encoded by colour, one colour per level of the tree**, as on the originator's
+  whiteboard: root, broad topics, the level below, and so on. The colours themselves must
+  come from the ProductDock palette in `design-system/` — the whiteboard's blue/red/gold
+  are the *scheme*, not the hues to ship.
+- **This is a desktop view.** On a phone, or where the 3D scene cannot render, the page
+  states plainly that the view needs a desktop browser. No 2D or text fallback is built —
+  that would be a second view to keep in sync, which is scope deliberately cut.
+- **The page lives at `/graph`.** The home page is left free for an introduction or
+  landing page later.
 - Must fit the app baseline already merged in `intent/nextjs-project-baseline` — the
   existing directory rules, state-management rules and environment-variable rules in
   `CLAUDE.md` apply.
@@ -155,13 +169,12 @@ That is the whole of it. Nodes, edges, labels, 3D.
 - [ ] Node labels have to stay readable in a 3D scene where nodes sit at different depths
       and can occlude each other. How is that handled at the far end of the tree? —
       *owner: design stage*
-- [ ] Does depth in the tree need to be visually encoded — size, colour, distance from the
-      root — or is the edge structure enough? The whiteboard colour-codes by level, which
-      suggests it matters, but that has not been decided. — *owner: Nemanja*
-- [ ] What happens on a phone or a low-powered laptop, where a 3D scene may be unusable?
-      Is there an acceptable fallback, and does the 3D constraint hold there too? —
-      *owner: Nemanja*
+- [x] Does depth in the tree need to be visually encoded? — **Answered:** yes, one colour
+      per level, as on the whiteboard. Hues come from the ProductDock palette.
+- [x] What happens on a phone or a low-powered laptop? — **Answered:** desktop-only, with
+      a plain message where the scene cannot render. No fallback view.
 - [ ] Accessibility: a 3D canvas is not reachable by keyboard or screen reader by default.
       What is the minimum we accept for this first slice? — *owner: design stage*
-- [ ] Is there a route/URL convention this should live under, given the reference uses
-      `/ai-learning-graph/graph`? — *owner: Nemanja*
+- [x] Which route does this live under? — **Answered:** `/graph`.
+- [ ] Desktop-only removes the phone case but not the accessibility one — a keyboard user
+      on a desktop still cannot reach a 3D canvas. That stays open below. — *note*
