@@ -80,6 +80,58 @@ That is the whole of it. Nodes, edges, labels, 3D.
   - the "Open page" link and the per-topic explanation pages behind it
   - the right-hand sidebar (statistics, legend, contributor tallies)
   - status filtering
+- **The day-one seed tree is decided** and comes from the originator's whiteboard. Four
+  labels below are transcribed verbatim and read as notes-to-self rather than topic
+  titles; they need real names before content work starts, but they are recorded as they
+  were written rather than invented. `n Node` is the originator's own placeholder — the
+  real name is not known yet and the label stays as `n Node` until it is.
+
+  ```
+  AI
+  ├── AI Agents
+  │   ├── Find agent example max 5-10        [verbatim — reads as a note, needs a title]
+  │   │   ├── Claude Agent SDK
+  │   │   ├── Google ADK
+  │   │   ├── Langchain
+  │   │   ├── Langgraph
+  │   │   ├── Strands
+  │   │   ├── OpenAI API compatible
+  │   │   └── Bring your own but check with us   [verbatim — reads as a note]
+  │   ├── How coding agents are built
+  │   │   ├── pi
+  │   │   ├── opencode
+  │   │   ├── tau
+  │   │   └── what else is hyped now or active   [verbatim — reads as a note]
+  │   └── Workflows
+  │       ├── n8n
+  │       └── something else                     [verbatim — reads as a note]
+  ├── n Node                                     [placeholder name, not yet decided]
+  │   ├── RAG
+  │   │   └── Vector db
+  │   │       ├── pgvector
+  │   │       ├── Qdrant
+  │   │       └── S3 vector
+  │   ├── Evals
+  │   │   ├── Ragas
+  │   │   └── DeepEval
+  │   └── Techniques
+  │       ├── Spec driven development
+  │       └── AI TDD
+  ├── Protocols
+  │   ├── MCP
+  │   │   ├── Web browser MCP
+  │   │   └── Oauth with Keycloak
+  │   └── A2A
+  └── n Node for non technical person (product and designers)   [no children yet]
+  ```
+
+  That is roughly 30 nodes and four levels deep. The tree is expected to stay in the tens
+  of nodes — under about 100 — so layout and performance are not expected to be a
+  constraint on the design.
+- **The seed file holds names and children only.** Status, assignee and page-link fields
+  are not reserved or stubbed in it now; they get added when those features are actually
+  built. Reason: it is a static file we control, so adding fields later is cheap, and
+  empty slots would pull the deferred features back into this design.
 - Must fit the app baseline already merged in `intent/nextjs-project-baseline` — the
   existing directory rules, state-management rules and environment-variable rules in
   `CLAUDE.md` apply.
@@ -87,17 +139,25 @@ That is the whole of it. Nodes, edges, labels, 3D.
 
 ## Open questions
 
-- [ ] Which AI topics does the seed tree contain on day one, and how deep does it go? —
-      *owner: Nemanja*
-- [ ] How big does this tree get? Tens of nodes and hundreds of nodes lead to different
-      layout and performance answers. — *owner: Nemanja*
+- [x] Which AI topics does the seed tree contain on day one, and how deep does it go? —
+      **Answered:** taken from the originator's whiteboard; the tree is recorded under
+      Constraints. Four labels are notes-to-self and still need real titles, and the
+      `n Node` branches are unnamed placeholders.
+- [x] How big does this tree get? — **Answered:** tens of nodes, under about 100.
+- [x] Does the seed file anticipate the deferred fields (status, assignee, page link)? —
+      **Answered:** no. Names and children only; see Constraints.
+- [ ] What should `n Node` actually be called? It appears twice as a branch name and is
+      a placeholder the originator has not named yet. — *owner: Nemanja*
+- [ ] The four verbatim note-style labels need real topic titles before content work
+      starts. — *owner: Nemanja*
 - [ ] How does a person move through the 3D space — orbit, zoom, fly, click-to-focus? Not
       decided; the reference gives no guidance because it is flat. — *owner: design stage*
 - [ ] Node labels have to stay readable in a 3D scene where nodes sit at different depths
       and can occlude each other. How is that handled at the far end of the tree? —
       *owner: design stage*
 - [ ] Does depth in the tree need to be visually encoded — size, colour, distance from the
-      root — or is the edge structure enough? — *owner: Nemanja*
+      root — or is the edge structure enough? The whiteboard colour-codes by level, which
+      suggests it matters, but that has not been decided. — *owner: Nemanja*
 - [ ] What happens on a phone or a low-powered laptop, where a 3D scene may be unusable?
       Is there an acceptable fallback, and does the 3D constraint hold there too? —
       *owner: Nemanja*
@@ -105,6 +165,3 @@ That is the whole of it. Nodes, edges, labels, 3D.
       What is the minimum we accept for this first slice? — *owner: design stage*
 - [ ] Is there a route/URL convention this should live under, given the reference uses
       `/ai-learning-graph/graph`? — *owner: Nemanja*
-- [ ] Does the seed file's shape need to anticipate the deferred fields (status, assignee,
-      page link) so adding them later isn't a rewrite, or do we ignore them entirely for
-      now? — *owner: Nemanja*
