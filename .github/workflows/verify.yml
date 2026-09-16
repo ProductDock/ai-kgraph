@@ -1,5 +1,6 @@
 # Runs the app's own checks — lint, typecheck, test, build — on every push to main and
-# every PR. Additive: does not touch spec-from-intent.yml or plan-ready.yml.
+# every PR that touches code. Additive: does not touch spec-from-intent.yml or
+# plan-ready.yml.
 #
 # Pins actions by commit SHA, unlike the existing workflows' mutable @v4 tags (spec §8.8,
 # C-9) — new workflows added here take a stricter posture deliberately.
@@ -9,7 +10,18 @@ name: verify
 on:
   push:
     branches: [main]
-  pull_request: {}
+  pull_request:
+    # Documents-only PRs have no code to lint, typecheck, test or build. The main
+    # source of these is the spec PR that spec-from-intent.yml opens, which touches
+    # only intent/<slug>/*. paths-ignore skips a PR only when *every* changed file
+    # matches, so a PR mixing a spec and real code still runs the full suite.
+    #
+    # A skipped workflow reports no check at all, so verify must not become a
+    # required status check on main without a companion no-op job to report for it.
+    paths-ignore:
+      - 'intent/**'
+      - 'docs/**'
+      - '**.md'
 
 permissions:
   contents: read
