@@ -15,7 +15,8 @@ directly:
    accepted artifact fires the next gate." A committed, accepted `intent.md` *is* the
    Stage 2 trigger.
 3. **The prompt is fixed and reusable.** Lesson 3 gives it verbatim, so it can be
-   baked into CI unchanged.
+   baked into CI unchanged. This repo keeps that paragraph as-is and appends a
+   structure requirement of its own — see [Two parts, two reviewers](#two-parts-two-reviewers).
 4. **Agent output must arrive as a PR.** Lesson 12: branch protection means "agent
    output becomes PRs, blocking direct main commits." So the workflow never commits the
    spec to the default branch.
@@ -70,6 +71,37 @@ skill versions" to be tracked. The prompt lives in the workflow file (so a chang
 is a reviewed diff), and `spec.provenance.yml` records the intent path, timestamp,
 model, workflow run URL, repo SHA, and the last commit SHA touching `.claude/skills` —
 which is what pins the skill versions that constrained the spec.
+
+### Two parts, two reviewers
+
+Lesson 3 asks for a "requirements **and design** spec … ready to hand to the engineering
+team", so technical depth belongs in the artifact. But two people gate it — the product
+owner asks *does this solve the problem the intent describes*, the tech lead asks *does
+this design hold* — and a single undifferentiated document serves neither. The first
+generated spec ran to ~870 lines with dependency choices, rendering pipelines and CSP
+directives interleaved with scope and requirements; there was no way for a product owner
+to know which half was theirs.
+
+The prompt therefore requires the spec to be ordered:
+
+- **Part A — Product.** Summary, scope (in / out / deferred), the decisions that close the
+  intent's open questions plus any decision the agent added for the PO to confirm or cut,
+  functional requirements as observable behaviour, risks. No file paths, package names,
+  code or API mechanics — where a technical choice has a product consequence, only the
+  consequence appears, cross-referenced into Part B.
+- **Part B — Technical design.** Fit with the existing app, non-functional requirements,
+  design, security, verification. Assumes its reader has read Part A.
+- **`## Areas of concern`** stays last and outside both parts, each concern written so the
+  PO can act on it without reading Part B: the conflict, the resolution taken, and the
+  decision needed from them.
+
+Sections are numbered continuously across both parts so cross-references resolve. The PR
+body tells the product owner to read Part A and the concerns, and that Part B is the tech
+lead's review, not theirs.
+
+This is a repo-local addition to the lesson-3 prompt, not a departure from it: nothing is
+removed from the spec, only ordered and labelled by audience. The Stage 3 handoff is
+unaffected — `plan-from-spec` still reads one `spec.md`.
 
 ### Flagged concerns get routed, not buried
 
