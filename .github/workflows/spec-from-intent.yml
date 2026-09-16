@@ -88,10 +88,6 @@ jobs:
     needs: find
     if: needs.find.outputs.count != '0'
     runs-on: ubuntu-latest
-    # Observed generation time is ~12 min. Without this the job inherits GitHub's
-    # 360-minute default, so a hung or looping agent run burns six hours of runner
-    # time before anything kills it — and cancel-in-progress: false means a retry
-    # queues behind it rather than replacing it.
     timeout-minutes: 30
     strategy:
       # One intent failing must not deny the others their spec.
