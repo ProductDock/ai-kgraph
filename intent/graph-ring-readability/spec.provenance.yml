@@ -1,0 +1,6 @@
+intent: intent/graph-ring-readability/intent.md
+generated_at: 2026-09-17T08:05:28Z
+model: claude-sonnet-5
+workflow_run: https://github.com/ProductDock/ai-kgraph/actions/runs/35196988769
+repo_sha: f9c40f56b5d79d2d7b14063b83a4004c6267d8ab
+skills_sha: 3c62cb30f1e0ca94c32677e6b309b688f77a61ea
