@@ -1,0 +1,546 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import {
+  BufferGeometry,
+  Color,
+  Float32BufferAttribute,
+  Fog,
+  InstancedMesh,
+  LineBasicMaterial,
+  LineSegments,
+  MeshBasicMaterial,
+  Object3D,
+  PerspectiveCamera,
+  Raycaster,
+  Scene,
+  SphereGeometry,
+  Vector2,
+  Vector3,
+  WebGLRenderer,
+} from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { useThemeTokens } from "@/hooks/use-theme-tokens";
+import { depthToken, MAX_DEPTH } from "@/lib/graph/palette";
+import type { GraphScene } from "@/lib/graph/types";
+import {
+  declutter,
+  GraphLabels,
+  selectLabelled,
+  type GraphLabelsHandle,
+} from "./graph-labels";
+import { createTween, tweenDuration } from "./tween";
+import { UnsupportedNotice } from "./unsupported-notice";
+
+/**
+ * Tuning values, not invariants. These are the numbers that looked right on screen;
+ * the properties they have to satisfy are asserted in the tests, which do not
+ * depend on which numbers these are.
+ */
+const CAMERA_FOV = 50;
+/** Multiples of the scene radius. */
+const OVERVIEW_DISTANCE = 1.8;
+const FOG_NEAR = 1.1;
+const FOG_FAR = 3.6;
+const LABEL_NEAR = 0.9;
+const LABEL_FAR = 2.8;
+const HOVER_SCALE = 1.3;
+const HOVER_MS = 120;
+const FOCUS_SCALE = 1.2;
+/** Enough movement between press and release to have been an orbit, not a click. */
+const CLICK_SLOP_PX = 5;
+const LABEL_INTERVAL_MS = 1000 / 30;
+
+const SCENE_TOKENS = [
+  ...Array.from({ length: MAX_DEPTH + 1 }, (_, depth) => depthToken(depth)),
+  "--graph-edge",
+  "--page",
+] as const;
+
+/**
+ * The whole scene, imperative, in one effect (spec §7.6). React owns the canvas
+ * element, the focused node id and nothing else: node positions, label positions
+ * and label opacity are written to refs, because sixty state updates a second would
+ * re-render the tree continuously.
+ *
+ * Nothing here runs on a loop. A frame is rendered only when something invalidates
+ * it - an orbit change, a tween step, a theme change, a hover - which is the
+ * difference between a warm tablet and a cool one. Every animation source therefore
+ * has to call `invalidate()` itself; with vanilla three there is no frameloop
+ * setting that does it for us.
+ *
+ * The teardown is the part to be careful with (R-12, V-19). It fails silently: no
+ * error, just a browser that has run out of WebGL contexts after a few navigations.
+ */
+export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const labelsRef = useRef<GraphLabelsHandle>(null);
+  const [contextLost, setContextLost] = useState(false);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+
+  // Mirrors of React state and props that the effect reads without re-running:
+  // rebuilding the scene to change a colour would throw away the camera.
+  const focusedIdRef = useRef<string | null>(null);
+  const tokensRef = useRef<Record<string, string>>({});
+  const applyTokensRef = useRef<(() => void) | null>(null);
+  const invalidateRef = useRef<(() => void) | null>(null);
+
+  const tokens = useThemeTokens(SCENE_TOKENS);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const { nodes, edges } = scene;
+    const indexById = new Map(nodes.map((node, index) => [node.id, index]));
+    const sceneRadius = scene.radius || 1;
+
+    // ---- renderer, camera, controls -------------------------------------------
+    const renderer = new WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const canvas = renderer.domElement;
+    canvas.style.display = "block";
+    canvas.style.touchAction = "none";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    container.appendChild(canvas);
+
+    const world = new Scene();
+    const fog = new Fog(
+      0xffffff,
+      sceneRadius * FOG_NEAR,
+      sceneRadius * FOG_FAR,
+    );
+    world.fog = fog;
+
+    const camera = new PerspectiveCamera(
+      CAMERA_FOV,
+      1,
+      sceneRadius / 100,
+      sceneRadius * 12,
+    );
+    camera.position.set(0, sceneRadius * 0.5, sceneRadius * OVERVIEW_DISTANCE);
+
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    // Higher than the 0.05 default: damping decays exponentially and every frame
+    // of the tail is a rendered frame, so the default leaves the GPU busy for
+    // about three seconds after the viewer has let go.
+    controls.dampingFactor = 0.12;
+    // Panning is not in the intent and it is the fastest way to lose the graph
+    // off-screen (FR-6).
+    controls.enablePan = false;
+    controls.minDistance = sceneRadius * 0.15;
+    controls.maxDistance = sceneRadius * 5;
+
+    // ---- nodes: one InstancedMesh, one draw call (NFR-2) ----------------------
+    // Unlit, so the pixel colour is the token colour: a lit material would shade
+    // every node away from the value the ramp validator passed (spec §7.4).
+    const nodeGeometry = new SphereGeometry(1, 16, 12);
+    const nodeMaterial = new MeshBasicMaterial({ fog: true });
+    const nodeMesh = new InstancedMesh(
+      nodeGeometry,
+      nodeMaterial,
+      nodes.length,
+    );
+    world.add(nodeMesh);
+
+    const dummy = new Object3D();
+    /** Current and target scale multipliers, for the hover and focus bumps. */
+    const scales = new Float32Array(nodes.length).fill(1);
+    const scaleTargets = new Float32Array(nodes.length).fill(1);
+    const animatingScales = new Set<number>();
+
+    function writeMatrix(index: number) {
+      const node = nodes[index]!;
+      dummy.position.set(...node.position);
+      dummy.scale.setScalar(node.radius * scales[index]!);
+      dummy.updateMatrix();
+      nodeMesh.setMatrixAt(index, dummy.matrix);
+    }
+    nodes.forEach((_, index) => writeMatrix(index));
+    nodeMesh.instanceMatrix.needsUpdate = true;
+
+    // ---- edges: one LineSegments, one draw call -------------------------------
+    const edgeVertices = new Float32Array(edges.length * 6);
+    edges.forEach((edge, index) => {
+      const source = nodes[indexById.get(edge.sourceId)!]!.position;
+      const target = nodes[indexById.get(edge.targetId)!]!.position;
+      edgeVertices.set(source, index * 6);
+      edgeVertices.set(target, index * 6 + 3);
+    });
+    const edgeGeometry = new BufferGeometry();
+    edgeGeometry.setAttribute(
+      "position",
+      new Float32BufferAttribute(edgeVertices, 3),
+    );
+    const edgeMaterial = new LineBasicMaterial({ fog: true });
+    const edgeLines = new LineSegments(edgeGeometry, edgeMaterial);
+    world.add(edgeLines);
+
+    // ---- colour, re-read from the DOM on every theme change -------------------
+    const colour = new Color();
+    function applyTokens() {
+      const current = tokensRef.current;
+      const page = current["--page"];
+      if (page) {
+        colour.set(page);
+        renderer.setClearColor(colour, 1);
+        // Fog is the page colour exactly, so distant nodes recede into the surface
+        // rather than into a haze of some other hue (spec §7.4, R-11).
+        fog.color.copy(colour);
+      }
+      const edgeColour = current["--graph-edge"];
+      if (edgeColour) edgeMaterial.color.set(edgeColour);
+
+      nodes.forEach((node, index) => {
+        const value = current[depthToken(node.depth)];
+        if (value) nodeMesh.setColorAt(index, colour.set(value));
+      });
+      if (nodeMesh.instanceColor) nodeMesh.instanceColor.needsUpdate = true;
+    }
+    applyTokensRef.current = applyTokens;
+    applyTokens();
+
+    // ---- the render-on-demand loop --------------------------------------------
+    let frame = 0;
+    let lastFrameAt = 0;
+    let lastLabelsAt = 0;
+    let disposed = false;
+
+    type CameraTween = {
+      startedAt: number;
+      tween: ReturnType<typeof createTween>;
+      fromPosition: Vector3;
+      toPosition: Vector3;
+      fromTarget: Vector3;
+      toTarget: Vector3;
+    };
+    let cameraTween: CameraTween | null = null;
+
+    /**
+     * Schedules exactly one frame. The `inFrame` guard is load-bearing:
+     * `controls.update()` dispatches "change" when it moves the camera, and the
+     * listener below turns that into an `invalidate()`. Without the guard every
+     * rendered frame schedules the next one and the scene runs at 60fps forever on
+     * a page nobody is touching - which is the whole cost render-on-demand exists
+     * to avoid, and it is invisible unless you count frames.
+     */
+    let inFrame = false;
+    function invalidate() {
+      if (disposed || frame || inFrame) return;
+      frame = requestAnimationFrame(renderFrame);
+    }
+    invalidateRef.current = invalidate;
+
+    function stepScales(deltaMs: number): boolean {
+      if (animatingScales.size === 0) return false;
+      const step = deltaMs / Math.max(1, tweenDuration(HOVER_MS));
+
+      for (const index of [...animatingScales]) {
+        const target = scaleTargets[index]!;
+        const current = scales[index]!;
+        const next =
+          step >= 1 || Math.abs(target - current) <= 0.001
+            ? target
+            : current +
+              Math.sign(target - current) *
+                Math.min(step, Math.abs(target - current));
+
+        scales[index] = next;
+        writeMatrix(index);
+        if (next === target) animatingScales.delete(index);
+      }
+      nodeMesh.instanceMatrix.needsUpdate = true;
+      return animatingScales.size > 0;
+    }
+
+    function stepCamera(now: number): boolean {
+      if (!cameraTween) return false;
+      const { progress, done } = cameraTween.tween.sample(
+        now - cameraTween.startedAt,
+      );
+      camera.position.lerpVectors(
+        cameraTween.fromPosition,
+        cameraTween.toPosition,
+        progress,
+      );
+      controls.target.lerpVectors(
+        cameraTween.fromTarget,
+        cameraTween.toTarget,
+        progress,
+      );
+      if (done) cameraTween = null;
+      return !done;
+    }
+
+    function updateLabels(now: number) {
+      if (now - lastLabelsAt < LABEL_INTERVAL_MS) return;
+      lastLabelsAt = now;
+
+      const handle = labelsRef.current;
+      if (!handle) return;
+
+      const cameraPosition = [
+        camera.position.x,
+        camera.position.y,
+        camera.position.z,
+      ] as const;
+      const near = sceneRadius * LABEL_NEAR;
+      const far = sceneRadius * LABEL_FAR;
+      const { clientWidth: width, clientHeight: height } = container!;
+      const projected = new Vector3();
+
+      handle.apply(
+        declutter(
+          selectLabelled(nodes, cameraPosition, focusedIdRef.current).map(
+            (node) => {
+              projected.set(...node.position);
+              const distance = projected.distanceTo(camera.position);
+              projected.project(camera);
+
+              const behindCamera = projected.z > 1;
+              const opacity = behindCamera
+                ? 0
+                : Math.min(1, Math.max(0, (far - distance) / (far - near)));
+
+              return {
+                text: node.name,
+                x: ((projected.x + 1) / 2) * width,
+                y: ((1 - projected.y) / 2) * height,
+                opacity,
+              };
+            },
+          ),
+        ),
+      );
+    }
+
+    function renderFrame(now: number) {
+      frame = 0;
+      if (disposed) return;
+
+      const deltaMs = lastFrameAt ? now - lastFrameAt : 16;
+      lastFrameAt = now;
+
+      inFrame = true;
+      const cameraMoving = stepCamera(now);
+      const scalesMoving = stepScales(deltaMs);
+      // Returns true while damping is still settling.
+      const dampingMoving = controls.update();
+
+      renderer.render(world, camera);
+      updateLabels(now);
+      inFrame = false;
+
+      // The only place the next frame is scheduled: whether one is needed is a
+      // question about the animations, not about how many events fired.
+      if (cameraMoving || scalesMoving || dampingMoving) invalidate();
+    }
+
+    // ---- camera framing --------------------------------------------------------
+    function flyTo(position: Vector3, distance: number) {
+      const direction = camera.position
+        .clone()
+        .sub(controls.target)
+        .normalize();
+      // Keeps the viewer's current orientation and only changes what is centred -
+      // a fly-to that also spins the graph loses them.
+      if (direction.lengthSq() === 0) direction.set(0, 0.35, 1).normalize();
+
+      cameraTween = {
+        startedAt: performance.now(),
+        tween: createTween(),
+        fromPosition: camera.position.clone(),
+        toPosition: position.clone().add(direction.multiplyScalar(distance)),
+        fromTarget: controls.target.clone(),
+        toTarget: position.clone(),
+      };
+      invalidate();
+    }
+
+    function focusNode(index: number) {
+      const node = nodes[index]!;
+      const children = nodes.filter((child) => child.parentId === node.id);
+      const centre = new Vector3(...node.position);
+
+      // Frame the node *and its children*, which is what makes click-to-fly useful
+      // on a tree this deep (FR-6).
+      let extent = node.radius * 4;
+      for (const child of children) {
+        extent = Math.max(
+          extent,
+          centre.distanceTo(new Vector3(...child.position)) + child.radius * 2,
+        );
+      }
+      const distance = extent / Math.sin((CAMERA_FOV * Math.PI) / 360);
+
+      setFocusedId(node.id);
+      focusedIdRef.current = node.id;
+      setScaleTarget(index, FOCUS_SCALE);
+      flyTo(centre, distance);
+    }
+
+    function showOverview() {
+      const previous = focusedIdRef.current;
+      if (previous !== null) {
+        const index = indexById.get(previous);
+        if (index !== undefined) setScaleTarget(index, 1);
+      }
+      setFocusedId(null);
+      focusedIdRef.current = null;
+      flyTo(new Vector3(0, 0, 0), sceneRadius * OVERVIEW_DISTANCE);
+    }
+
+    function setScaleTarget(index: number, target: number) {
+      if (scaleTargets[index] === target) return;
+      scaleTargets[index] = target;
+      animatingScales.add(index);
+      invalidate();
+    }
+
+    // ---- picking ---------------------------------------------------------------
+    const raycaster = new Raycaster();
+    const pointer = new Vector2();
+    let hoveredIndex: number | null = null;
+    let pressedAt: { x: number; y: number } | null = null;
+
+    function pick(event: PointerEvent): number | null {
+      const rect = canvas.getBoundingClientRect();
+      pointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObject(nodeMesh, false)[0];
+      return hit?.instanceId ?? null;
+    }
+
+    function onPointerMove(event: PointerEvent) {
+      const index = pick(event);
+      if (index === hoveredIndex) return;
+
+      if (
+        hoveredIndex !== null &&
+        nodes[hoveredIndex]!.id !== focusedIdRef.current
+      ) {
+        setScaleTarget(hoveredIndex, 1);
+      }
+      hoveredIndex = index;
+      if (index !== null) setScaleTarget(index, HOVER_SCALE);
+      canvas.style.cursor = index === null ? "grab" : "pointer";
+    }
+
+    function onPointerDown(event: PointerEvent) {
+      pressedAt = { x: event.clientX, y: event.clientY };
+    }
+
+    function onPointerUp(event: PointerEvent) {
+      const pressed = pressedAt;
+      pressedAt = null;
+      if (!pressed) return;
+      // An orbit drag ends on the canvas too; only a near-stationary release is a
+      // click.
+      if (
+        Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) >
+        CLICK_SLOP_PX
+      ) {
+        return;
+      }
+
+      const index = pick(event);
+      // Clicking empty space returns to the overview - without it, a viewer who
+      // flew into a leaf four levels deep has no way back except reloading (D-7).
+      if (index === null) showOverview();
+      else focusNode(index);
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") showOverview();
+    }
+
+    function onResize() {
+      const { clientWidth: width, clientHeight: height } = container!;
+      if (!width || !height) return;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      invalidate();
+    }
+
+    function onContextLost(event: Event) {
+      // Not recoverable here: the scene is rebuilt on remount, and a canvas that
+      // silently stays blank is the failure FR-8 exists to prevent.
+      event.preventDefault();
+      setContextLost(true);
+    }
+
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("webglcontextlost", onContextLost);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("keydown", onKeyDown);
+    controls.addEventListener("change", invalidate);
+
+    onResize();
+    invalidate();
+
+    // ---- teardown (R-12, V-19) -------------------------------------------------
+    return () => {
+      disposed = true;
+      if (frame) cancelAnimationFrame(frame);
+      invalidateRef.current = null;
+      applyTokensRef.current = null;
+
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("webglcontextlost", onContextLost);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      controls.removeEventListener("change", invalidate);
+      controls.dispose();
+
+      nodeGeometry.dispose();
+      nodeMaterial.dispose();
+      nodeMesh.dispose();
+      edgeGeometry.dispose();
+      edgeMaterial.dispose();
+      world.clear();
+
+      renderer.dispose();
+      // Hands the WebGL context back rather than waiting for the GC. A browser
+      // gives a document a handful of them; this is what keeps ten navigations
+      // from exhausting them.
+      renderer.forceContextLoss();
+      canvas.remove();
+    };
+  }, [scene]);
+
+  // Colour changes must not rebuild the scene - that would throw away the camera.
+  useEffect(() => {
+    tokensRef.current = tokens;
+    applyTokensRef.current?.();
+    invalidateRef.current?.();
+  }, [tokens]);
+
+  if (contextLost) return <UnsupportedNotice reason="webgl" />;
+
+  const focusedName =
+    scene.nodes.find((node) => node.id === focusedId)?.name ?? null;
+
+  return (
+    <div ref={containerRef} className="relative flex-1 overflow-hidden">
+      <GraphLabels ref={labelsRef} />
+      {/* The focused node is React state rather than a plain ref because this
+          line re-renders with it. The effect reads `focusedIdRef`, so flying to a
+          node never rebuilds the scene. */}
+      <p aria-live="polite" className="sr-only">
+        {focusedName
+          ? `Centred on ${focusedName}.`
+          : "Showing the whole graph."}
+      </p>
+    </div>
+  );
+}

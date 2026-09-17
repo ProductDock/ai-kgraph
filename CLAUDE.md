@@ -46,6 +46,40 @@ ad-hoc string arrays.
 - **`ANTHROPIC_API_KEY` must never appear in `src/lib/env.ts`.** It's a repository secret
   used by `spec-from-intent.yml`; this app has no reason to read it.
 
+## Graph data
+
+The `/graph` route renders one committed tree. The content lives in
+**`src/lib/graph/seed.ts`** and nothing else — adding or renaming a topic is an edit to
+that one file and a PR. `src/lib/graph/` is framework-agnostic: it imports nothing from
+`three`, `app/` or `components/`, and produces plain numbers, so changing the renderer
+changes no file in it.
+
+- **The tree is capped at five levels (depth 0–4), and the day-one seed already hits it.**
+  The deepest node is `ai/n-node/rag/vector-db/pgvector`. A sixth level fails the build
+  with a message naming the node — deliberately, because depth is encoded by a five-step
+  colour ramp and a sixth level would have no colour. Raising the cap means adding a
+  `--graph-depth-5` step, bumping `MAX_DEPTH` in `src/lib/graph/palette.ts`, **and
+  re-running the `dataviz` validator in both modes**. It is not a one-line change.
+- The seed schema is `.strict()`: unknown keys fail the build. `status`, `assignee` and
+  page links are deliberately not reserved — they arrive when those features do.
+- Node ids are the slugified name path (`ai/ai-agents/workflows/n8n`), so **sibling names
+  must be unique**. A duplicate fails the build.
+- **New tokens in `globals.css`:** `--graph-depth-0…4` (the validated ordinal ramp),
+  `--graph-edge` and `--graph-label-halo`, declared in all three scopes. They are **not**
+  bridged into `@theme inline` — they are not shadcn slots, following the
+  `--accent-secondary` precedent. `--graph-edge` carries its own opaque hex per scope
+  rather than aliasing `--gridline`, because `THREE.Color` cannot parse the functional
+  `rgb()` with alpha that `--gridline` uses in dark mode.
+- The scene reads those tokens off the DOM (`use-theme-tokens.ts`), **not** from
+  `useUiStore` — that store hardcodes `theme: "light"` and never hydrates, so it does not
+  describe the DOM. Do not "simplify" it to use the store.
+- **Single click is spent on camera focus.** The deferred node popup gets **double-click
+  on desktop and long-press on tablet** — decided, not built. Picking already resolves to
+  a node id in one handler in `graph-scene.tsx`, which is where it attaches.
+- **Accessibility of the scene is known, recorded debt**, not an oversight: the canvas is
+  unreachable by keyboard and opaque to a screen reader. The page _chrome_ meets WCAG 2.2
+  AA. See `intent/graph-accessibility/intent.md`.
+
 ## Pitfalls
 
 - **Client-boundary trap.** `src/app/providers.tsx` is the only `'use client'` module in
@@ -60,6 +94,13 @@ ad-hoc string arrays.
 - **`serverEnv` in client code throws, on purpose.** If you see
   `serverEnv.<x> was read in the browser`, the fix is to move the read server-side, not
   to catch the error.
+- **The 3D scene renders on demand, not on a loop.** Every animation source must call
+  `invalidate()` itself, and nothing may schedule a frame from inside one — that is an
+  infinite 60fps loop on an idle page, and it is invisible unless you count frames.
+- **The scene disposes its own GPU resources.** There is no React binding library doing
+  it. If you add a geometry, material or listener to `graph-scene.tsx`, add it to the
+  teardown in the same edit: the failure mode is a browser that silently runs out of
+  WebGL contexts after a few navigations.
 
 ## Known proof-script caveat
 

@@ -223,18 +223,18 @@ V-1 … V-18 are the spec's §12. V-19 is new, and exists because D-1 changed.
 | V-5 | Depth cap enforced | unit: a six-level seed | throws, names the node |
 | V-6 | **Depth ramp validated** | `validate_palette.js "…" --ordinal --mode light --surface "#ffffff"` and `--mode dark --surface "#0a0c0e"` | both exit 0 — **run, reports above** |
 | V-7 | Env access unchanged | `rg -n 'process\.env\.' src --glob '!src/lib/env.ts'` | no matches |
-| V-8 | Draw calls | `renderer.info.render.calls` while orbiting | nodes 1, edges 1 |
-| V-9 | Bundle isolation and budget | `npm run build` output; grep the shared chunk for `three` | `/` unchanged; `/graph` chunk ≤ 400 KB gzip, number recorded here |
+| V-8 | Draw calls | GL calls counted per rendered frame while orbiting | **pass — 259 frames, 259 `drawElementsInstanced` (nodes) + 259 `drawArrays` (edges) = exactly 1 + 1 per frame**, unchanged at 148 nodes |
+| V-9 | Bundle isolation and budget | `npm run build` output; grep every chunk `/` loads for `three` | **pass — `/graph`-only JS 152.7 KB gzip** (budget 400). `/` loads 13 scripts, none containing `three`; `three` sits in one 136.1 KB gzip chunk reached only through the dynamic import |
 | V-10 | No-WebGL path | component test, WebGL probe stubbed to `null` | notice rendered, no canvas, **`three` never imported** |
 | V-11 | Reduced motion | unit on the tween helper, `matchMedia` stubbed to `reduce` | duration 0, no intermediate frames |
-| V-12 | Frame rate | manual: orbit continuously on a desktop and a tablet, at 150 nodes | ≥ 60 / ≥ 30 fps, numbers recorded here |
-| V-13 | CSP clean | load `/graph`, read the browser console | no new Report-Only violation |
+| V-12 | Frame rate | orbit continuously, frames counted in the browser, at 36 and at 148 nodes | **desktop pass — 60 fps (vsync-capped) at both sizes**, and 0 frames at rest within 1s of release. ⚠ **tablet not measured — no tablet available to the build; still owed** |
+| V-13 | CSP clean | load `/graph` from the production build, read the browser console | **pass — console entirely clean.** The only Report-Only entries are `unsafe-eval` reports caused by the Playwright harness's own `Runtime.evaluate`, not by the app |
 | V-14 | Label cap | unit on the selection function with 150 nodes | ≤ 24 returned; root and focused always present |
-| V-15 | Both themes | manual: light, dark, toggle mid-session | ramp re-reads, no flash, level-4 step still distinguishable under fog |
+| V-15 | Both themes | toggled mid-session in the browser, screenshots in both | **pass — the ramp, the edges and the fog re-read on `data-theme` with no remount and no flash** |
 | V-16 | No new server surface | `rg -n "'use server'\|route\.ts\|middleware\.ts" src` | no matches |
-| V-17 | Chrome keyboard path | manual: skip link → header → depth key → links → toggle | focus always visible, order sensible |
+| V-17 | Chrome keyboard path | tab through the route in the browser | **pass — skip link → back link → theme toggle, each with a visible focus ring.** The depth key is static text and correctly takes no tab stop, so the order is shorter than this row predicted |
 | V-18 | Small-viewport path | component test, `matchMedia` stubbed below the threshold | notice rendered, no canvas mounted |
-| **V-19** | **No GPU or listener leak** | navigate `/graph` → `/` → `/graph` ten times; watch `renderer.info.memory.geometries` and `.textures`, and assert the resize / pointer / `webglcontextlost` / `MutationObserver` / `matchMedia` listeners are gone | counts return to baseline; no listener growth |
+| **V-19** | **No GPU or listener leak** | navigated `/graph` → `/` → `/graph` ten times in a real browser, instrumenting `getContext` and `window.add/removeEventListener` | **pass — 20 window listeners added, 20 removed; exactly 1 canvas in the DOM after ten round trips; no context-loss events and no "too many active WebGL contexts" warning** |
 
 **Where the tests live.** On the pure `lib/graph/**` functions and the non-canvas chrome.
 jsdom has no WebGL, this repo has no `vi.mock` precedent and no `user-event` — and none of
@@ -244,6 +244,35 @@ the unsupported-path tests (V-10, V-18) never reach `three` at all. House style,
 mount boundary, role and accessible-name queries, explicit `vitest` imports, colocated
 `*.test.ts(x)`.
 
-**Measurements to fill in at step 10.** `/graph` client chunk size (NFR-4, ≤ 400 KB gzip),
-desktop fps and tablet fps at 150 nodes (NFR-1). Recorded back into this file in the same
-PR, per the spec's V-9 and V-12.
+## Measurements, recorded at step 10
+
+Taken against `npm run build` + `npm run start`, driven by headless Chrome (the real Chrome
+on this machine, not a bundled Chromium), viewport 1440×900.
+
+| Measurement | Budget | Result |
+| --- | --- | --- |
+| `/graph`-only client JS | ≤ 400 KB gzip (NFR-4) | **152.7 KB gzip** — 136.1 of it `three`, in a chunk only the dynamic import reaches |
+| `/` client JS | must not grow (NFR-3) | **unchanged** — 13 scripts, none containing `three` |
+| Draw calls per frame | nodes 1, edges 1 (NFR-2) | **1 + 1**, at 36 nodes and at 148 |
+| Desktop fps, orbiting | ≥ 60 (NFR-1) | **60**, at 36 nodes and at 148 |
+| Frames at rest | render-on-invalidate | **0** within 1s of releasing the orbit |
+| Labels on screen | ≤ 24 (NFR-2) | **22** at the overview framing, after the declutter pass |
+
+**Still owed: the tablet number.** NFR-1 asks for ≥ 30 fps on a current tablet and no
+tablet was available to this build. Everything the measurement would stress — instancing,
+the unlit material, render-on-invalidate, the 24-label cap — is in place and measured on
+the desktop, but the number itself is not evidence until someone runs it on the hardware.
+
+### Two things the measurements found, which review would not have
+
+1. **The idle page was rendering at 60 fps for ~3 seconds after every orbit.** Damping
+   decays exponentially and every frame of that tail is a rendered frame, so the
+   OrbitControls default (`dampingFactor` 0.05) left the GPU busy long after the viewer
+   let go. Raised to `0.12`. This is exactly the failure render-on-demand exists to
+   prevent, and it is invisible without counting frames.
+2. **Labels piled up on each other** at the overview framing — the nearest-24 cap and the
+   distance fade are not enough, because two nodes in different branches can project to
+   nearly the same pixel however far apart they are in the scene. Fixed with a pure
+   screen-space `declutter()` pass (tested), which drops a label that would land on one
+   already placed. This is R-4 firing; it is cheaper than the raycast occlusion §7.8 held
+   in reserve, and it fixes what was actually wrong on screen.
