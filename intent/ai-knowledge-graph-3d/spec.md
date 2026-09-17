@@ -4,14 +4,20 @@
   space you can move around in rather than a flat diagram*
 - **Originator:** Nemanja (nemanja.vasic@productdock.com)
 - **Stage:** 2 — requirements & design (AI-Native SDLC, lesson 3)
-- **Status:** awaiting product owner review
+- **Status:** approved (merged in #17) — **amended at Stage 3 on 2026-09-17**, see the note below
 
 > **Read `## Areas of concern` before approving.** Two of the intent's constraints
 > contradict standards this repository already holds itself to (accessibility, and
-> colour-alone encoding), one constraint has an implication the intent did not anticipate
-> (a hard depth cap), and the colour ramp specified here has **not yet been through the
-> `dataviz` validator** — that run is a blocking gate at Stage 3, not a formality. Each is
-> recorded in §14 and cross-referenced from the section it affects.
+> colour-alone encoding), and one constraint has an implication the intent did not
+> anticipate (a hard depth cap). Each is recorded in §14 and cross-referenced from the
+> section it affects.
+>
+> **Amended 2026-09-17, at Stage 3** (issue #21, branch `plan/ai-knowledge-graph-3d`).
+> Planning falsified R-1: **no published `@react-three/fiber` accepts the React version
+> this repo pins**, so D-1, §7.1, §7.2, §7.6, §8.3, §11 and §13 now specify vanilla
+> `three` with no React binding library. The depth ramp has since been generated and
+> validated in both modes, which closes C-4 and R-6. Amended passages are marked
+> *Amended at Stage 3*.
 
 ---
 
@@ -48,7 +54,7 @@ scope by explicit instruction of the intent and must not be designed or stubbed 
 | S-7  | Orbit / zoom / click-to-fly camera, with `prefers-reduced-motion` honoured in JS      |
 | S-8  | Capability + viewport gate, and the plain message for phone / no-WebGL / context loss |
 | S-9  | Route chrome: `h1`, theme toggle, back link, `loading.tsx`, `error.tsx`, metadata     |
-| S-10 | Three new dependencies, pinned exactly, with their supply-chain rationale recorded    |
+| S-10 | Two new dependencies, pinned exactly, with their supply-chain rationale recorded     |
 | S-11 | `CLAUDE.md` amendment: where the seed lives, the depth cap, the token additions       |
 
 ### 2.2 Explicitly out of scope
@@ -73,6 +79,8 @@ Not built, but the design is shaped so they land cleanly:
 
 - **Per-node interaction (popup).** Single click is spent on camera focus. The picking
   code returns a node id to one handler; a second gesture attaches there (§7.7, C-10).
+  *Amended at Stage 3:* the replacement gesture is now **decided** — double-click on a
+  desktop, long-press on a tablet — and recorded in `CLAUDE.md`. Decided, not built.
 - **Depth legend.** The depth→token mapping is a pure exported function
   (`lib/graph/palette.ts`), so a legend reads the same source the scene does.
 - **Extra node fields.** The seed schema is `.strict()` — adding `status` later is one
@@ -90,12 +98,14 @@ files, each amended in a way the baseline spec already anticipated:
 | `src/app/globals.css`    | **Additive** — new `--graph-*` role tokens in the three existing scopes    |
 | `src/app/page.tsx`       | **Additive** — one link to `/graph` (§7.10, D-8)                           |
 | `CLAUDE.md`              | **Additive** — a `## Graph data` section                                   |
-| `package.json` / lock    | Three dependencies + one dev dependency (§7.2)                            |
+| `package.json` / lock    | One dependency + one dev dependency (§7.2)                                |
 
 The baseline's rules are followed as written, not reinterpreted:
 
 - `lib/` stays framework-agnostic. `src/lib/graph/**` imports nothing from `app/` or
-  `components/`, and imports nothing from `three` — it produces plain numbers.
+  `components/`, and imports nothing from `three` — it produces plain numbers. That rule
+  is what keeps D-1 a contained decision: the ids, the geometry and the invariants are all
+  settled outside any rendering library, so changing the renderer changes no `lib/` file.
 - `components/ui/**` is untouched. No new shadcn component is generated; the existing
   `Card` is reused for the unsupported-device notice.
 - Everything used only by `/graph` lives in `src/app/graph/_components/`, per the
@@ -116,10 +126,10 @@ not know it was asking, and hands the two content questions back.
 
 | #        | Question                                                    | Decision                                                                                                                                                                                                                                                                                             |
 | -------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D-1**  | Which 3D library?                                           | **`three` + `@react-three/fiber`. No `@react-three/drei`.** Rationale in §7.2 — drei would be pulled in for two things (orbit controls, SDF text) and both have a smaller answer. Dropping it removes ~15 transitive packages and, with them, the only CSP interaction this feature would have had (§8.4). |
+| **D-1**  | Which 3D library?                                           | **`three` alone — no `@react-three/fiber`, no `@react-three/drei`.** *Amended at Stage 3.* The original answer was `three` + `@react-three/fiber`; planning found that **no published `@react-three/fiber` release accepts React 19.3.0**, which this repo pins. Every one of them — 9.7.0, the 10.x alphas and the canaries — caps at `react <19.3`, because r3f binds to React's reconciler internals. That is an `npm ci` ERESOLVE failure *and* a runtime-compat risk, not a warning to silence. Rationale and rejected alternatives in §7.2. |
 | **D-2**  | Force-directed layout, or computed?                         | **Computed, deterministic, no physics.** A pure function of the seed. The same commit always produces the same picture, the layout is unit-testable, and there is no simulation cost on a tablet. A force layout on a strict tree buys organic spacing at the price of a non-reviewable, non-testable scene. |
 | **D-3**  | Where does the seed live, and in what format?               | **`src/lib/graph/seed.ts`** — a TypeScript module with `satisfies GraphSeed`, so a bad edit is a red squiggle before it is a failed build. Validated again by zod at build time for the invariants types cannot express (§7.3).                                                                          |
-| **D-4**  | How is depth coloured?                                      | **A five-step single-hue ordinal ramp on the brand blue**, declared as `--graph-depth-0…4` role tokens and read from CSS by the scene, so `globals.css` stays the single source of truth for colour (§7.4).                                                                                            |
+| **D-4**  | How is depth coloured?                                      | **A five-step single-hue ordinal ramp on the brand blue**, declared as `--graph-depth-0…4` role tokens and read from CSS by the scene, so `globals.css` stays the single source of truth for colour (§7.4). *Amended at Stage 3:* the ramp is generated and **validated in both modes**; the shipped hexes are in §7.4 and C-4 is closed. |
 | **D-5**  | How deep can the tree go?                                   | **Five levels, hard-capped and enforced.** One palette step per level; a sixth level fails the build with a message naming the offending node. ⚠ This is the one place the design constrains content the intent expected to be unconstrained — see §14, **C-3**.                                        |
 | **D-6**  | How are labels drawn?                                       | **A DOM overlay, not in-scene text.** Uses the Poppins already loaded by `next/font`, needs no font atlas in `public/`, costs no new CSP directive, and leaves real text in the DOM as the future accessibility seam (§7.8).                                                                             |
 | **D-7**  | What does a click on empty space do?                        | **Returns to the overview framing; `Escape` does the same.** ⚠ Spec-added: the intent does not mention it. Without it, a viewer who flies into a leaf four levels deep has no way back except reloading. Cheap to cut if the PO disagrees.                                                              |
@@ -207,10 +217,9 @@ src/app/graph/
 ├── error.tsx                   'use client' route boundary — generic message + digest, no raw error
 └── _components/
     ├── graph-view.tsx          'use client' — capability/viewport gate, dynamic import of the scene
-    ├── graph-scene.tsx         'use client' — <Canvas>, camera, controls, picking, focus state
-    ├── graph-nodes.tsx         instanced spheres
-    ├── graph-edges.tsx         one LineSegments buffer
+    ├── graph-scene.tsx         'use client' — the whole imperative three.js scene in one effect
     ├── graph-labels.tsx        DOM overlay label layer
+    ├── depth-key.tsx           the inline depth legend (C-2)
     └── unsupported-notice.tsx  the plain message (FR-8), one component, two copy variants
 
 src/lib/graph/                  framework-agnostic; imports nothing from three, app/ or components/
@@ -229,14 +238,44 @@ src/hooks/
 
 ### 7.2 Dependencies
 
-| Package                | Type | Why                                                                 |
-| ---------------------- | ---- | ------------------------------------------------------------------- |
-| `three`                | dep  | The renderer. There is no lighter way to satisfy "must be 3D".      |
-| `@react-three/fiber`   | dep  | React reconciler for three — keeps the scene declarative and in the same idiom as the rest of the app. Its own dependency set is small (`zustand`, `scheduler`, `react-reconciler`, `suspend-react`, `its-fine`), and `zustand` is already present. |
-| `@types/three`         | dev  | `three` ships no types.                                             |
+*Amended at Stage 3 — this section originally added three packages.*
 
-**`@react-three/drei` is deliberately not used** (D-1). It would have been added for two
-things:
+| Package         | Type | Version    | Why                                                        |
+| --------------- | ---- | ---------- | ---------------------------------------------------------- |
+| `three`         | dep  | `0.186.0`  | The renderer. There is no lighter way to satisfy "must be 3D". |
+| `@types/three`  | dev  | `0.186.0`  | `three` ships no types.                                    |
+
+Both pinned exactly, per the baseline's NFR-2. Neither has a React peer dependency, so
+neither constrains a future React upgrade, and no `transpilePackages` entry is needed —
+`three` ships ESM.
+
+**`@react-three/fiber` is deliberately not used** (D-1). It was the original choice, for
+one reason: it keeps the scene declarative and in the same idiom as the rest of the app.
+That reason is real but it is idiom, not capability — and it is unavailable at any
+version:
+
+| `@react-three/fiber` | `react` peer range | this repo pins |
+| -------------------- | ------------------ | -------------- |
+| `9.7.0` (latest)     | `>=19 <19.3`       | **`19.3.0`**   |
+| `10.0.0-alpha.5`     | `>=19.0 <19.3`     | `19.3.0`       |
+| `canary`             | `>=19.0 <19.3`     | `19.3.0`       |
+
+The upper bound is deliberate on r3f's part — it binds to React reconciler internals, the
+way `react-reconciler` requires an exact React pairing — so the two ways past it are both
+bad trades. Forcing it with `overrides` or `legacy-peer-deps` overrides a constraint the
+maintainers set for a reason, and the failure mode is a silent rendering bug rather than a
+build error. Pinning React down to `19.2.8` would downgrade React across the whole app for
+one route's convenience, against a baseline intent that declared the stack fixed, and
+would gate every future React bump on r3f's ceiling.
+
+Vanilla `three` costs roughly 150 lines of imperative setup in a single effect, and that
+is affordable *here* specifically because the scene is static: 36 nodes, one
+`InstancedMesh`, one `LineSegments`, render-on-invalidate, no animation loop at rest. It
+also removes a whole class of future breakage, since `three` never has an opinion about
+React. What it does **not** remove is resource disposal, which r3f would have handled —
+that is now this design's own obligation, recorded as R-12 with V-19 to prove it.
+
+**`@react-three/drei` is not used either.** It would have been added for two things:
 
 - `OrbitControls` — available directly as `three/examples/jsm/controls/OrbitControls.js`,
   which ships inside `three` itself.
@@ -244,11 +283,6 @@ things:
   `blob:` URL. Under the enforced CSP this repo is heading toward (`default-src 'self'`,
   no `worker-src`), that is a blocked worker, and it would also have meant shipping a
   second copy of Poppins as a `.woff` in `public/`. D-6 removes the need entirely.
-
-Pin every version exactly, per the baseline's NFR-2. **Two compatibility questions must
-be answered before any code is written** (§13): that the resolved `@react-three/fiber`
-major supports React 19, and that it needs no `transpilePackages` entry under Next 16's
-bundler. Getting either wrong is a rework of §7.6, not a tweak.
 
 ### 7.3 The seed and its validation
 
@@ -306,35 +340,57 @@ shadcn slots.
 
 ```css
 --graph-depth-0 … --graph-depth-4   /* the ramp, root → leaf */
---graph-edge                        /* = --gridline; recessive chrome */
+--graph-edge                        /* recessive chrome; its own opaque value per scope */
 --graph-label-halo                  /* = --page; the 2px surface ring behind label text */
 ```
 
-**The ramp values.** Two candidates, and the choice is a Stage-3 output of the validator,
-not a preference:
+⚠ *Amended at Stage 3 —* `--graph-edge` **cannot alias `--gridline`.** In dark mode
+`--gridline` is `rgb(255 255 255 / 0.08)` (`globals.css:56`, `:68`) and `THREE.Color`
+cannot parse a functional `rgb()` with an alpha channel. `--graph-edge` therefore carries
+its own opaque hex per scope — `#e5e7eb` light, `#2a2f35` dark — each chosen to match the
+rendered appearance of the aliased value composited over `--page`. `--graph-label-halo`
+aliases `--page`, which is already an opaque hex, so that one stands as written.
 
-- **Ramp B (recommended).** Re-step the `dataviz` blue ramp onto the **brand** blue's hue
-  — `--focus-ring` / `#027ac2`, OKLCH hue held constant — with `#027ac2` itself as the
-  level-2 step, chroma ≥ 0.10 at every step, and adjacent-step ΔL ≥ 0.06. This is what
-  the `design-system` skill asks for: brand values in place of the skill's placeholders,
-  which is what `globals.css` already did for every non-status token.
-- **Ramp A (fallback).** The `dataviz` blue ramp verbatim — light `#104281`, `#1c5cab`,
-  `#2a78d6`, `#5598e7`, `#86b6ef`; dark `#b7d3f6`, `#86b6ef`, `#5598e7`, `#2a78d6`,
-  `#184f95`. Documented and pre-validated as a ramp, but a visibly different blue from the
-  app's own accent.
+**The ramp values — validated, and final.** *Amended at Stage 3; this replaces the two
+candidates the spec originally offered.* Ramp B was generated as described and passes; Ramp
+A is not needed and is dropped.
 
-**Validation is a blocking gate, in both modes, against this app's own surfaces** — which
-are `--page` = `#ffffff` light and `#0a0c0e` dark, *not* the validator's defaults, so the
-published numbers for Ramp A do not transfer:
+Ramp B is the brand blue `#027ac2` (`--focus-ring`) with its OKLCH hue held constant at
+`h ≈ 245.6°`, `#027ac2` itself as the level-2 step, chroma ≥ 0.098 at every step, and
+adjacent-step ΔL ≥ 0.06:
+
+| Depth | Light (`--page` `#ffffff`) | Dark (`--page` `#0a0c0e`) |
+| ----- | -------------------------- | ------------------------- |
+| 0 root| `#014976`                  | `#50affb`                 |
+| 1     | `#00619c`                  | `#3799e3`                 |
+| 2     | `#027ac2`                  | `#1983cc`                 |
+| 3     | `#3194de`                  | `#036eaf`                 |
+| 4 leaf| `#50affb`                  | `#025a90`                 |
+
+Contrast with the surface decreases with depth in both modes, so the root is the
+highest-contrast mark on screen and leaves recede.
+
+**The dark column is selected for the dark surface, not flipped** (NFR-6). A literal
+mirror of the light column also passes, but only at 2.07:1 against the 2.0 light-end floor;
+the column above is re-stepped and lifted to 2.68:1, which is the margin worth having.
+
+**Validation was a blocking gate and has now been run**, in both modes, against this app's
+own surfaces rather than the validator's defaults:
 
 ```
-node <dataviz-skill>/scripts/validate_palette.js "<5 light hexes>" --ordinal --mode light --surface "#ffffff"
-node <dataviz-skill>/scripts/validate_palette.js "<5 dark hexes>"  --ordinal --mode dark  --surface "#0a0c0e"
+node <dataviz-skill>/scripts/validate_palette.js \
+  "#014976,#00619c,#027ac2,#3194de,#50affb" --ordinal --mode light --surface "#ffffff"
+  → [PASS] Lightness monotone / Adjacent ΔL / Light-end contrast (#50affb 2.37:1) / Single hue (1°)
+  → ALL CHECKS PASS, exit 0
+
+node <dataviz-skill>/scripts/validate_palette.js \
+  "#50affb,#3799e3,#1983cc,#036eaf,#025a90" --ordinal --mode dark --surface "#0a0c0e"
+  → [PASS] Lightness monotone / Adjacent ΔL / Light-end contrast (#025a90 2.68:1) / Single hue (1°)
+  → ALL CHECKS PASS, exit 0
 ```
 
-Both must exit 0, and the reports go in `plan.md`. If Ramp B fails and cannot be
-re-stepped into a pass, fall back to Ramp A and record why. **This validation has not been
-run — see §14, C-4.**
+C-4 and R-6 are closed. The full reports are in `plan.md`; re-run both if any value here
+is ever edited.
 
 **Not used in the scene:** `--accent-secondary` (brand orange). The `design-system` skill
 reserves it for secondary emphasis and forbids combining both accents; a sixth hue on
@@ -367,6 +423,9 @@ not describe the DOM — see §14, **C-12**. The DOM is the truth; read the DOM.
 
 ### 7.6 Rendering pipeline and the client boundary
 
+*Amended at Stage 3 — the pipeline is unchanged in shape, but the scene is now plain
+three.js rather than a `<Canvas>` reconciler tree.*
+
 ```
 graph/page.tsx            Server Component. import { seed } → validate → flatten → layout
    │                      → GraphScene (plain arrays of numbers and strings)
@@ -374,26 +433,44 @@ graph/page.tsx            Server Component. import { seed } → validate → fla
 graph-view.tsx            'use client'. Gate only: viewport + WebGL. No three import at
    │                      module scope — the scene is a next/dynamic import with ssr:false.
    ▼
-graph-scene.tsx           'use client'. <Canvas>, camera, controls, picking, focus state.
+graph-scene.tsx           'use client'. One effect owns a WebGLRenderer, a
+                          PerspectiveCamera, OrbitControls, an InstancedMesh of nodes, a
+                          LineSegments of edges, a Raycaster for picking — and disposes
+                          every one of them on cleanup.
 ```
 
-Three points the `nextjs-code-review` checklist is specifically about:
+Four points the `nextjs-code-review` checklist is specifically about:
 
 1. **`ssr: false` cannot be used from a Server Component** in the App Router. The dynamic
    import therefore lives in `graph-view.tsx`, which is already a Client Component for the
    gate. `page.tsx` stays a Server Component and never imports `three`.
 2. **The client boundary is drawn at the gate, not at the page.** `page.tsx`, the header,
-   the `h1` and the back link all stay server-rendered; only the scene subtree is client.
+   the `h1`, the depth key and the back link all stay server-rendered; only the scene
+   subtree is client.
 3. **No data fetching of any kind.** The seed is an import, the layout is synchronous, the
    route is static (FR-10). There is no `fetch`, so there is no cache or revalidation
    decision to make, and per the `CLAUDE.md` state table this is server data for initial
    render — **not** React Query, and **not** Zustand. The focused node id is one
    component's own state: `useState` in `graph-scene.tsx`.
+4. **React never owns the scene graph.** The effect creates the three.js objects once and
+   mutates them imperatively; React owns the `<canvas>` element, the focused-node id and
+   nothing else. Node positions, label positions and label opacity are written to refs,
+   never through state — sixty state updates a second would re-render the tree
+   continuously.
 
-`<Canvas frameloop="demand">`: the scene is static, so frames are rendered only when
-something invalidates — orbiting, a camera tween, a theme change, a hover. This is the
-difference between a warm tablet and a cool one. Every animation source must call
-`invalidate()`; the orbit controls do this on change when registered with `makeDefault`.
+**Render on demand, not on a loop.** The scene is static, so a frame is rendered only when
+something invalidates it: an orbit change, a camera tween step, a theme change, a hover.
+At rest nothing is scheduled, which is the difference between a warm tablet and a cool
+one. With vanilla `three` this is an explicit `invalidate()` helper that schedules one
+`requestAnimationFrame` if none is pending — r3f's `frameloop="demand"` no longer provides
+it, so every animation source must call it.
+
+**Cleanup is now this design's obligation, not the library's.** The effect's teardown
+must `dispose()` every geometry and material, call `renderer.dispose()` and
+`forceContextLoss()`, cancel any pending frame, and remove the resize, pointer,
+`webglcontextlost`, `MutationObserver` and `matchMedia` listeners. Getting this wrong
+degrades the whole app after a few navigations, and it degrades silently — the browser
+simply runs out of WebGL contexts. See R-12 and V-19.
 
 ### 7.7 Layout algorithm (`lib/graph/layout.ts`)
 
@@ -528,16 +605,17 @@ There is no filesystem read, no path parameter and no dynamic route, so the base
 
 ### 8.3 Supply chain
 
-Three new packages, one of them large. Per the skill's supply-chain guidance and the
-baseline's NFR-2:
+*Amended at Stage 3: two new packages, not three.* One of them is large. Per the skill's
+supply-chain guidance and the baseline's NFR-2:
 
 - **Exact pins, no ranges.** `npm ci` in CI, lockfile committed.
-- **Verify the package names character by character before installing** —
-  `@react-three/fiber`, not `react-three-fiber`; `three`, not `three.js`. Typosquats on
-  popular 3D packages are a known pattern.
+- **Verify the package names character by character before installing** — `three`, not
+  `three.js`; `@types/three`, not `@types/threejs`. Typosquats on popular 3D packages are
+  a known pattern.
 - **Review the added transitive tree in the lockfile diff** as part of the PR. Dropping
-  drei (D-1) is partly a security decision: it removes roughly fifteen small transitive
-  packages from that review.
+  both `@react-three/fiber` and drei (D-1) is partly a security decision: between them
+  they account for roughly twenty small transitive packages that no longer need reviewing.
+  `three` itself has no runtime dependencies.
 - `npm audit --audit-level=high` already runs in `verify.yml` (non-blocking); the result
   for the new tree is recorded in the PR.
 - `three` ships frequent majors with breaking changes. It falls under the baseline's D-7
@@ -669,16 +747,18 @@ structural decision to do either.
 
 | ID   | Risk                                                                    | Likelihood | Impact   | Mitigation                                                                                          |
 | ---- | ----------------------------------------------------------------------- | ---------- | -------- | --------------------------------------------------------------------------------------------------- |
-| R-1  | `@react-three/fiber` major does not match React 19 / Next 16            | Medium     | **High** | Resolve before writing code (§13). It is a version choice, not a redesign — R3F v9+ targets React 19. |
+| ~~R-1~~ | ~~`@react-three/fiber` major does not match React 19 / Next 16~~            | —          | —        | **Closed at Stage 3, and it fired.** No published r3f accepts React 19.3.0. Eliminated rather than mitigated: D-1 now specifies vanilla `three`, which has no React peer at all |
 | R-2  | `three` majors break the scene silently                                 | Medium     | Medium   | Exact pins; majors open a PR a human reads (baseline D-7)                                            |
-| R-3  | Tablet frame rate misses NFR-1                                          | Medium     | Medium   | `frameloop="demand"`, instancing, unlit materials, ≤ 24 labels. V-12 measures on real hardware        |
+| R-3  | Tablet frame rate misses NFR-1                                          | Medium     | Medium   | render-on-invalidate, instancing, unlit materials, ≤ 24 labels. V-12 measures on real hardware        |
 | R-4  | Labels overlap or flicker at branch boundaries                          | **Medium** | Medium   | Nearest-24 cap + depth tiebreak; raycast occlusion held in reserve (§7.8)                            |
 | R-5  | The 5-level cap blocks a content edit                                   | Medium     | Medium   | Fails loudly at build with the node named; extending the ramp is a token edit + a validator run (C-3) |
-| R-6  | The depth ramp fails the validator in one mode                          | Medium     | Low      | Ramp A is the documented fallback (§7.4)                                                             |
+| ~~R-6~~ | ~~The depth ramp fails the validator in one mode~~                          | —          | —        | **Closed at Stage 3.** Ramp B validated, both modes, exit 0 (§7.4)                                  |
 | R-7  | Accessibility debt is never paid                                        | **High**   | **High** | C-1 asks for a follow-up intent to be opened at the same time as this one merges                     |
 | R-8  | The bundle lands on the home page's shared chunk                        | Low        | Medium   | `next/dynamic` with `ssr:false` inside the client gate; V-9 asserts it                               |
 | R-9  | Placeholder labels (`n Node`) ship and become permanent                 | **Medium** | Medium   | C-8; they are conspicuous by design, and the intent already flags them                               |
 | R-10 | Click-to-fly locks in a gesture the deferred popup needs                | High       | Low      | Named in the intent; C-10 asks for the popup's gesture to be chosen now, not built now               |
+| R-11 | The validated colour is the *pixel* colour only where fog has not mixed it — deep nodes recede into `--page` by design | Medium | Low | Intended, and the reason radius and shell distance also carry depth. Fog near/far tuned so the level-4 step stays distinguishable at overview framing; checked in V-15 |
+| R-12 | **New at Stage 3.** The hand-rolled scene leaks GPU resources and listeners across route changes if it does not dispose cleanly | Medium | **Medium** | This is the specific cost of dropping r3f, which disposed for us. One effect, one cleanup: `dispose()` every geometry and material, `renderer.dispose()`, `forceContextLoss()`, cancel the pending frame, remove every listener and the `MutationObserver`. Proven by V-19 |
 
 **Rollback.** Entirely additive apart from three small amendments (§3). Reverting the merge
 commit removes the route, the tokens and the dependencies, and leaves the baseline exactly
@@ -695,7 +775,7 @@ as it was. No data, no migration, no deployed state.
 | V-3  | Seed schema rejects a stray field      | unit test: a seed with `status: "todo"` fails                                                          | throws, message names the node                 |
 | V-4  | Layout invariants                      | unit test: determinism, shell radius by depth, min separation, child further than parent               | pass                                          |
 | V-5  | Depth cap enforced                     | unit test: a 6-level seed fails                                                                        | throws, message names the node                 |
-| V-6  | **Depth ramp validated**               | `validate_palette.js … --ordinal --mode light --surface "#ffffff"` and `--mode dark --surface "#0a0c0e"` | both exit 0; reports pasted into `plan.md`     |
+| V-6  | **Depth ramp validated**               | `validate_palette.js … --ordinal --mode light --surface "#ffffff"` and `--mode dark --surface "#0a0c0e"` | both exit 0 — **run at Stage 3; reports in §7.4 and `plan.md`** |
 | V-7  | Env access unchanged                   | `rg -n 'process\.env\.' src --glob '!src/lib/env.ts'`                                                   | no matches                                    |
 | V-8  | Draw calls                             | three.js `renderer.info.render.calls` while orbiting                                                   | nodes 1, edges 1                              |
 | V-9  | Bundle isolation and budget            | `npm run build` output; grep the shared chunk for `three`                                              | `/` unchanged; `/graph` chunk ≤ 400 KB gzip    |
@@ -708,9 +788,12 @@ as it was. No data, no migration, no deployed state.
 | V-16 | No new server surface                  | `rg -n "'use server'|route\.ts|middleware\.ts" src`                                                     | no matches                                    |
 | V-17 | Chrome keyboard path                   | manual: tab through header, links, toggle                                                              | focus always visible, order sensible          |
 | V-18 | Small-viewport path                    | component test with `matchMedia` stubbed below the threshold                                           | notice rendered, no canvas mounted            |
+| V-19 | **No GPU or listener leak**            | navigate `/graph` → `/` → `/graph` ten times; watch `renderer.info.memory.geometries` and `.textures`, and assert the resize / pointer / `webglcontextlost` / `MutationObserver` / `matchMedia` listeners are gone | counts return to baseline; no listener growth |
 
 V-6 is the gate the `dataviz` skill exists to enforce, and V-2, V-9 and V-16 are the ones
-that prove this stayed a static page with no new server surface.
+that prove this stayed a static page with no new server surface. **V-19 is new at Stage 3**
+and exists only because D-1 changed: r3f would have disposed the scene's resources for us,
+and nothing does now.
 
 ---
 
@@ -718,25 +801,36 @@ that prove this stayed a static page with no new server surface.
 
 Read with [`intent.md`](./intent.md), then run `/plan-from-spec ai-knowledge-graph-3d`.
 
-**Resolve before writing `plan.md`:**
+**Resolve before writing `plan.md` — all three are now resolved**, and this section is
+kept as the record of how:
 
-1. The `@react-three/fiber` major that supports React 19 under Next 16, and whether
-   `transpilePackages` is needed (R-1). Everything in §7.6 depends on the answer.
-2. The exact resolved versions of `three`, `@react-three/fiber`, `@types/three` — recorded
-   in `plan.md`.
-3. Ramp B's five light and five dark hexes, **generated and validated** (§7.4, V-6). If
-   they do not pass, Ramp A and a recorded reason.
+1. ~~The `@react-three/fiber` major that supports React 19 under Next 16, and whether
+   `transpilePackages` is needed (R-1).~~ **There is none.** Every published release caps
+   at `react <19.3`; this repo pins `19.3.0`. D-1 and §7.2 now specify vanilla `three`,
+   and no `transpilePackages` entry is needed.
+2. ~~The exact resolved versions.~~ **`three@0.186.0`, `@types/three@0.186.0`**, both
+   pinned exactly. `@react-three/fiber` is not installed.
+3. ~~Ramp B's five light and five dark hexes, generated and validated.~~ **Generated and
+   validated, both modes, exit 0.** The hexes and the reports are in §7.4.
 
 **Suggested sequence** — each step independently verifiable:
 
 seed + schema + flatten (V-3, V-5) → layout (V-4) → tokens + palette mapping (V-6) →
 route shell, chrome, metadata, loading/error (V-2) → gate + notice (V-10, V-18) → canvas,
-nodes, edges (V-8) → labels (V-14) → controls and fly-to (V-11) → theme token re-read
-(V-15) → budget and frame rate (V-9, V-12) → `CLAUDE.md`.
+nodes, edges (V-8, V-19) → labels (V-14) → controls and fly-to (V-11) → depth key and
+theme token re-read (V-15) → budget and frame rate (V-9, V-12) → `CLAUDE.md`.
+
+*Amended at Stage 3:* the depth key (C-2) joins the theme step, and V-19 joins the canvas
+step. The order is otherwise as written and is followed by `plan.md`.
 
 `plan-from-spec` step 2 requires raising a non-empty `## Areas of concern` with the policy
 owner before planning. **C-1, C-2, C-3, C-6 and C-8 are decisions for the product owner.
 Do not plan around them silently.**
+
+*Amended at Stage 3:* all of them were raised and answered. Each concern below now carries
+a **Resolved at Stage 3** line recording the call and where it is implemented. The
+reasoning is in `plan.md`; the calls themselves are summarised here so the spec stays
+readable on its own.
 
 ---
 
@@ -759,6 +853,8 @@ the same time this one merges**, rather than after. §7.8 and §2.3 keep the doo
 cheaply (DOM labels, a single picking handler); that door closes quietly if nobody walks
 through it (R-7).
 
+**Resolved at Stage 3: the trade is approved, and the accessibility follow-up intent is opened in the same commit this merges** — not afterwards. R-7 rates "debt never paid" High/High and this is the app's only product surface, so a scheduled intent is the only thing that keeps §2.3's door open. §7.8's DOM labels and the single picking handler stand as the named seam.
+
 **C-2 — Depth is encoded by colour, and the legend that would explain it is out of
 scope.** `dataviz` is unambiguous: identity must never be carried by colour alone, and any
 encoding with two or more levels ships a legend. The intent puts the sidebar — explicitly
@@ -771,6 +867,8 @@ cheapest fix that does not reopen the excluded sidebar is a single inline depth 
 header — roughly five swatches and five words. It is not in this spec's scope because the
 intent excluded it; it would be a small, contained addition if the PO wants it.
 
+**Resolved at Stage 3: the cheapest fix is taken.** An inline depth key ships in the route header — five swatches, five words, reading `lib/graph/palette.ts` so it cannot drift from the scene. It is not the excluded sidebar, and it closes the `dataviz` gate for roughly twenty lines. Recorded as a small, deliberate addition over this spec rather than pretended to be in it.
+
 **C-3 — A hard five-level cap on a tree the intent said would nest "as deep as the content
 needs".** One colour per level (a fixed constraint) plus a validated finite ramp (a
 `dataviz` gate) forces a maximum depth. Five was chosen because the day-one tree is
@@ -782,6 +880,8 @@ beyond about six steps of one hue, adjacent levels stop being distinguishable an
 encoding silently stops meaning anything. **PO decision: accept the cap, or accept that
 depth colour stops being reliable past level five.**
 
+**Resolved at Stage 3: the cap is accepted as specified.** Verified against the day-one tree — 36 nodes, deepest is `ai/n-node/rag/vector-db/pgvector` at depth 4 — so the cap does bind on the first commit, exactly as this concern says. Accepted because it fails loudly and names the node, and extending it is a token edit plus a validator re-run. Clamping deeper nodes to the level-4 colour was rejected: it would let depth colour stop being truthful with nothing on screen saying so.
+
 **C-4 — The colour ramp in this spec has not been validated.** §7.4 specifies the
 construction, the thresholds, the surfaces and the exact commands, but the validator could
 not be executed in the session that produced this spec, so **no ramp here is confirmed to
@@ -790,6 +890,8 @@ the hexes are not final until it exits 0 in both modes. Second, this app's surfa
 (`#ffffff`, `#0a0c0e`) are not the validator's defaults (`#fcfcfb`, `#1a1a19`), so even
 Ramp A's published numbers do not transfer and must be re-measured. Do not ship colours
 from this document on the strength of this document.
+
+**Resolved at Stage 3: closed.** The validator has been run in both modes against `#ffffff` and `#0a0c0e`. Ramp B passes; the hexes and reports are in §7.4 and `plan.md`. Ramp A is dropped.
 
 **C-5 — There is still no reviewed brand policy, and the one that exists says nothing
 about 3D.** `CLAUDE.md`'s own "Not organisational policy" note applies unchanged: the
@@ -801,6 +903,8 @@ shadow scale, keep tokens role-named) rather than taken from a standard. The der
 defensible; it is not authoritative, and the first person to say "that doesn't look like
 us" will be right without contradicting anything written down.
 
+**Resolved at Stage 3: acknowledged, not closed — because it cannot be closed from here.** Every 3D decision in §7 and §9 remains derived rather than authoritative, and the first person to say "that doesn't look like us" will be right. What this spec can do, it does: the ramp is brand-hued and validated, no shadow scale is invented, no third radius is introduced, and all colour stays in role tokens in `globals.css`, so a future brand review changes token values and not component code.
+
 **C-6 — Three dependencies added to a stack the baseline intent declared "fixed".** The
 baseline says the stack *"is fixed and is not open for design debate"*, and `three` /
 `@react-three/fiber` / `@types/three` are not on it. The addition is unavoidable — "must
@@ -809,6 +913,8 @@ the fixed list draws WebGL — but it is a scope decision and it belongs to the 
 as `zod` did in the baseline (that spec's C-3). Worth naming the weight honestly: `three`
 is by a wide margin the largest dependency in this repository and the only one whose major
 releases routinely break rendering code.
+
+**Resolved at Stage 3: approved, and smaller than specified** — one dependency plus one dev dependency, not three. `@react-three/fiber` is gone for the compatibility reason in D-1, which also removes about twenty transitive packages from the review surface. `three` remains the largest dependency in the repository and the honest weight of the decision is unchanged.
 
 **C-7 — The security policy applied here is generic, and the CSP is still not
 enforced.** The baseline's C-1 is only half-closed: a `security-review` skill now exists in
@@ -819,6 +925,8 @@ remains `Report-Only` with no report collector, so V-13 ("no new violations") is
 observation made in one developer's browser console, not an enforced control. The claim in
 §8.4 that this design needs no CSP change is sound and is a real design win — but it is a
 claim about a policy that is not currently enforcing anything.
+
+**Resolved at Stage 3: acknowledged, not closed.** §8's policy source is still generic and the CSP is still Report-Only with no collector, so V-13 remains an observation rather than an enforced control. Nothing in this change makes it worse, and the §8.4 claim got stronger: with both r3f and drei gone, the feature has no worker, no `blob:` URL and no external fetch at all.
 
 **C-8 — Six of the thirty-six labels are placeholders, and the intent's success criterion
 is precisely that a newcomer can read the picture unaided.** Two branches are named
@@ -832,6 +940,8 @@ They cannot do that for a third of the tree. **Not a blocker for the build; a bl
 the outcome.** These can be answered in ten minutes and should be, before Stage 3 rather
 than after.
 
+**Resolved at Stage 3: the labels ship verbatim, and the question is put to the originator before merge rather than after.** This spec is right not to invent names. But the collision stands as written — the `n Node` branch is 12 of 36 nodes and the success criterion is that a newcomer can read the picture unaided — so `plan.md` carries it as a blocker for the *outcome* while the build proceeds.
+
 **C-9 — Nobody owns getting this in front of the team.** The intent's outcome is *"a page
 in the app that my team and I can open"*. Hosting, deployment and domains were out of
 scope in the baseline (its D-5 and C-6) and are out of scope here, and no intent in this
@@ -839,6 +949,8 @@ repository owns them. As things stand, the deliverable is a page that runs on
 `localhost:3000` on one laptop. That may be exactly right for now — but *"my team can open
 it"* is not satisfied by this spec or by any other, and no one is currently accountable
 for closing the gap.
+
+**Resolved at Stage 3: recorded, still unowned.** No intent in this repository owns hosting, and this plan does not take it on. The deliverable remains a page that runs on `localhost:3000`, and *"my team can open it"* is satisfied by nothing currently written down.
 
 **C-10 — The click gesture is spent, and the replacement should be chosen now.** The
 intent records this consequence itself: click flies the camera, so the deferred node popup
@@ -848,12 +960,16 @@ Choosing it later means either changing camera behaviour people have already lea
 accepting whatever gesture happens to be left over. It is not built here; it should be
 decided here.
 
+**Resolved at Stage 3: decided, not built.** Double-click on a desktop, long-press on a tablet, reserved for the deferred node popup and recorded in `CLAUDE.md`. Long-press is needed for tablets in any case, which is what makes the pair the cheap answer.
+
 **C-11 — Phone users get a dead end, by design.** No 2D or text fallback is built, which
 is the right call for scope, but the consequence should be conscious: a link to `/graph`
 shared in Slack opens to "this needs a bigger screen" for anyone reading on a phone, which
 is most people, most of the time. The mitigation costs one sentence, not a second view —
 the notice already tells them what to open it on. Flagged because "phones are deferred"
 reads as a smaller decision on paper than it feels like in a group chat.
+
+**Resolved at Stage 3: accepted as written.** No fallback view is built. The notice copy in §7.9 already names what to open it on, which is the whole of the mitigation this concern asks for.
 
 **C-12 — A pre-existing theme-store defect that this feature has to route around.**
 `src/stores/ui-store.ts:12` initialises `theme` to `"light"` unconditionally, and nothing
@@ -865,3 +981,5 @@ by this change, and §7.5 works around it by reading the DOM rather than the sto
 scene stays correct either way. But the workaround is only necessary because the store is
 wrong. It is a few lines to fix (hydrate from `localStorage` / `matchMedia` on mount) and
 is worth a separate small PR rather than being absorbed silently into this one.
+
+**Resolved at Stage 3: a separate small PR, not absorbed into this one.** §7.5's DOM read is correct on its own merits — the DOM is the truth for theme — so this feature does not depend on the fix landing first. But the store is still wrong for the theme toggle itself, and fixing it here would hide a pre-existing defect inside a feature PR.

@@ -5,6 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import Link from "next/link";
 import { ThemeToggle } from "@/components/common/theme-toggle";
 
 export default function HomePage() {
@@ -35,6 +36,25 @@ export default function HomePage() {
             is put together.
           </p>
         </CardContent>
+      </Card>
+
+      {/* The one link to /graph (spec D-8). One link is not a landing page, and
+          the home page stays free for one; an unlinked route is one nobody finds. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>AI knowledge graph</CardTitle>
+          <CardDescription>
+            The AI topics we are learning about, as a tree you can move around
+            in —{" "}
+            <Link
+              href="/graph"
+              className="text-primary underline hover:text-[var(--text-primary)]"
+            >
+              open the graph
+            </Link>
+            .
+          </CardDescription>
+        </CardHeader>
       </Card>
     </main>
   );

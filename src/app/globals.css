@@ -36,6 +36,30 @@
   --accent-secondary: #ea592a;
   --accent-secondary-hover: #c44821;
 
+
+  /* Depth ramp for the /graph scene (ai-knowledge-graph-3d spec §7.4). A
+     five-step ordinal ramp on the brand blue (--focus-ring) with its OKLCH hue
+     held constant: depth is ordered, so it wears one hue light-to-dark, never
+     the categorical palette. Contrast with the surface decreases with depth, so
+     the root is the highest-contrast mark and leaves recede.
+
+     Validated with the `dataviz` skill's validate_palette.js --ordinal against
+     this app's own surfaces, both modes — re-run it if any value here is edited.
+     Deliberately not bridged into @theme inline: these are not shadcn slots,
+     following the --accent-secondary precedent above. */
+  --graph-depth-0: #014976;
+  --graph-depth-1: #00619c;
+  --graph-depth-2: #027ac2;
+  --graph-depth-3: #3194de;
+  --graph-depth-4: #50affb;
+
+  /* Its own opaque hex per scope rather than an alias of --gridline: THREE.Color
+     cannot parse a functional rgb() with an alpha channel, which is what
+     --gridline carries in dark mode. This value matches how the aliased one
+     renders over --page. */
+  --graph-edge: #e5e7eb;
+  --graph-label-halo: var(--page);
+
   --font-sans: var(--font-poppins), system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -54,6 +78,16 @@
     --text-muted: #8a9199;
     --border: rgb(255 255 255 / 0.12);
     --gridline: rgb(255 255 255 / 0.08);
+
+    /* Re-stepped for the dark surface, not mirrored (spec NFR-6): a literal
+       mirror of the light column also passes the validator, but at 2.07:1
+       against the 2.0 light-end floor where this one gets 2.68:1. */
+    --graph-depth-0: #50affb;
+    --graph-depth-1: #3799e3;
+    --graph-depth-2: #1983cc;
+    --graph-depth-3: #036eaf;
+    --graph-depth-4: #025a90;
+    --graph-edge: #2a2f35;
   }
 }
 
@@ -66,6 +100,16 @@
   --text-muted: #8a9199;
   --border: rgb(255 255 255 / 0.12);
   --gridline: rgb(255 255 255 / 0.08);
+
+  /* Re-stepped for the dark surface, not mirrored (spec NFR-6): a literal
+     mirror of the light column also passes the validator, but at 2.07:1
+     against the 2.0 light-end floor where this one gets 2.68:1. */
+  --graph-depth-0: #50affb;
+  --graph-depth-1: #3799e3;
+  --graph-depth-2: #1983cc;
+  --graph-depth-3: #036eaf;
+  --graph-depth-4: #025a90;
+  --graph-edge: #2a2f35;
 }
 
 /* Bridges the role-named tokens above onto the semantic names the vendored
