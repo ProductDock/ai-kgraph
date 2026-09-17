@@ -5,6 +5,10 @@
   **Branch:** `plan/graph-ring-readability`
 - **Stage:** 3 — plan & design review (AI-Native SDLC, lesson 4)
 - **Date:** 2026-09-17
+- **Amended:** 2026-09-17, after step 7 — the on-screen pass moved five numbers and
+  two mechanisms, and settled three of the risks below. Every change is recorded in
+  §"What step 7 changed" rather than quietly edited into the steps above, so the plan
+  that was approved is still legible next to what was built.
 
 ## Context
 
@@ -162,17 +166,43 @@ the full-sphere layout, free camera and children-only framing are now wrong, and
 CLAUDE.md is read as current by the next session. Amend `spec.md` §7 and §9.6 as listed
 above.
 
+## What step 7 changed
+
+The spec's own C-5 said its numbers were a first attempt. Seven things moved once the
+scene was on screen; the first two are mechanism changes, not retunes, and are called
+out as such.
+
+| What | Planned | Built | Why |
+| --- | --- | --- | --- |
+| **Opening framing** | `OVERVIEW_DISTANCE = 1.8 × sceneRadius` | `overviewDistance(direction)` — solves the camera distance against the actual node positions, per screen axis | **The spec's answer to Q5 is false as built.** `PerspectiveCamera`'s fov is *vertical*, so a portrait tablet crops horizontally: at 820×1180 the outer branches and labels were cut off at both edges. Measured from the desktop frame, the content reaches ±57 world units horizontally but only ±30 vertically — it is not spherical, so a bounding-sphere fit frames empty space on desktop while a fixed multiple crops the tablet. Fitting the real extent is the only option that satisfies both. Confirmed with the originator before building. |
+| **Fog and label fade** | multiples of `sceneRadius` (1.1/3.6 and 0.9/2.8) | multiples of the current **view distance** (0.75/2.2 and 0.55/1.8) | Consequence of the above: once the tablet camera sits at ~163 instead of ~102, the whole graph falls inside a fade band keyed to a fixed radius and dissolves into the page. Keyed to the view distance it also behaves correctly while dollying. |
+| `MAX_POLAR` | `π · 0.42` (75.6°) | `π · 0.36` (64.8°) | At 75.6° the ring collapses to nearly edge-on and the topics begin lining up behind one another again — the intent's original complaint, reached from the other side. §4 item 2 predicted exactly this. `MIN_POLAR` was right and did not move. |
+| Label type size | 13px (inherited) | **10px**, with `LABEL_CHAR_WIDTH`/`LABEL_HEIGHT` derived from it | The originator asked for "much smaller" on seeing it. The declutter metrics have to track the font size or the collision boxes keep reserving 13px rows for 10px text. |
+| `LABEL_MAX_PX` | 132 | 132, unchanged | Held up at both viewports. At 10px it now fits ~26 characters instead of ~20, so fewer titles truncate — "Spec driven development" and "OpenAI API compatible" now read in full. |
+| `SHELL_GAP`, `RING_RADIUS`, `RADII[0]`, `MIN_POLAR`, `OPENING_POLAR`, `RING_CLEARANCE` | 12, 20, 2.6, `π·0.18`, `π·0.3`, 1.15 | unchanged | All held on the first attempt. |
+
+Two smaller notes from the pass, neither a spec item:
+
+- **Dead space above the graph on desktop is content, not camera.** The seed's branches
+  hang below the ring plane (down-extent 368px against an up-extent of 174px from the
+  hub), and the hub stays centred because it is the centre of the picture. Fixing it
+  would mean framing the content's centroid instead of the hub — a different decision
+  than this spec made. Left alone deliberately.
+- **The hub's sphere shows faceting at the closest dolly**, because `RADII[0] = 2.6` now
+  lets `SphereGeometry(1, 16, 12)` fill the screen. Raising the segment count costs no
+  draw call, so NFR-1 is indifferent; not changed without being asked.
+
 ## Risks
 
 | Risk | What depends on it / what happens if it's wrong | Response |
 | --- | --- | --- |
-| **Narrowing the ring cones crowds the deeper shells.** Today `AI Agents` gets a 92° half-angle (`halfAngleForShare(π, 0.59, 4)`); on the ring it gets 40.5°. The same subtree now has to fit in a much narrower cone. | `layout.test.ts`'s existing "keeps node centres apart" case — which runs a 7-area / 148-node synthetic seed, where the cone is only 23° — is the first thing that breaks. This is **the riskiest step**, and it fails loudly in a unit test rather than quietly on screen. | Raise `SHELL_GAP` and `RING_RADIUS` — §9.6 explicitly authorises retuning them. `SHELL_GAP = 12` / `RING_RADIUS = 20` are already raised from 9 for this reason. Never weaken the separation test to make the layout fit. |
-| **Renaming the root changes every node id**, because ids are the slugified name path: `ai/n-node/rag/vector-db/pgvector` → `pd-ai/…`. | `tree.test.ts` asserts two of those ids literally, and `layout.test.ts` one. None of them is in the spec's §7 change table, and nothing else in the app persists an id — no URL state, no storage, no deep links. Harmless today; it would be a breaking change the day ids become links. | Update the three tests and the two docstring examples, and extend §7's table in the same PR so the table stays true. Recorded here so a future deep-link feature knows ids are name-derived and a rename moves them. |
+| ~~**Narrowing the ring cones crowds the deeper shells.**~~ **Did not materialise.** Today `AI Agents` gets a 92° half-angle (`halfAngleForShare(π, 0.59, 4)`); on the ring it gets 40.5°. The same subtree now has to fit in a much narrower cone. | `layout.test.ts`'s existing "keeps node centres apart" case — which runs a 7-area / 148-node synthetic seed, where the cone is only 23° — is the first thing that breaks. This is **the riskiest step**, and it fails loudly in a unit test rather than quietly on screen. | `SHELL_GAP = 12` / `RING_RADIUS = 20` were enough on the first attempt: the 148-node separation test passed unchanged and never had to be touched. Worst descendant deviation measured 25.7° against the 40.5° wedge limit. |
+| **Renaming the root changes every node id**, because ids are the slugified name path: `ai/n-node/rag/vector-db/pgvector` → `pd-ai/…`. | `tree.test.ts` asserts two of those ids literally, and `layout.test.ts` one. None of them is in the spec's §7 change table, and nothing else in the app persists an id — no URL state, no storage, no deep links. Harmless today; it would be a breaking change the day ids become links. | Update the tests and the two docstring examples, and extend §7's table in the same PR so the table stays true. **It was five assertions in `tree.test.ts`, not two** — lines 13, 20, 30, 31 and 32 all pin real-seed ids. Recorded here so a future deep-link feature knows ids are name-derived and a rename moves them. |
 | **FR-8's truncation does not exist to be "kept".** §9.6 says the label keeps "its existing fixed-width, ellipsis approach"; `graph-labels.tsx` has `whiteSpace: nowrap` and no width bound at all. | Read literally, §9.6 would have this step skipped and FR-8 would ship unmet — the exact "long titles ran across the scene" complaint in the intent. | Build it as new work (step 6) and correct §9.6. Not handed back as a blocked spec: FR-8 states the requirement unambiguously, §7 already lists the file as changing, and §9.6 fixes the rule (fixed width, ellipsis, tablet check) — nothing about *what* to build is in doubt. |
-| **`minDistance` is measured from the orbit target, not the origin.** | After clicking a deep node, the fence would stop protecting the hub's interior, and FR-6's "can never be moved into the space between the centre and the ring" would be false in exactly the state a viewer reaches by using the feature. §9.5's claim that the fence "applies automatically" is true only of the target-relative clamp. | The origin-relative clamp in step 4. It is four lines and it makes V-6 checkable in the focused state, not just from the overview. |
+| **`minDistance` is measured from the orbit target, not the origin.** | After clicking a deep node, the fence would stop protecting the hub's interior, and FR-6's "can never be moved into the space between the centre and the ring" would be false in exactly the state a viewer reaches by using the feature. §9.5's claim that the fence "applies automatically" is true only of the target-relative clamp. | The origin-relative clamp in step 4. **Measured, not assumed:** across a ~4,200-frame drive (every ring topic, twelve orbit steps each, a full dolly at each step) the closest approach to the origin was **23.000** with the clamp and **6.157** without it, against a ring radius of 20. FR-6 genuinely fails without it, and §9.5's claim that the `OrbitControls` fence covers every fly-to is false rather than imprecise. |
 | **Camera freedom is removed permanently** (spec C-3). Anyone used to flying anywhere loses it. | Not a defect — the intent's central decision. | Recorded, not mitigated. |
 | **The empty ring topic ships visibly lopsided, and two topics are still called "n Node"** (C-1, C-4). | The new layout makes density differences *more* visible, so the empty branch will stand out more than before, and roughly a third of the ring still cannot be read by a newcomer — the failure this work exists to prevent, moved one level down. | Out of scope by decision. Both are Nemanja's content calls; worth closing shortly after merge or the success criterion stays false regardless of how well the shape reads. |
-| **Tablet legibility is unverified** (Q2/Q5, NFR-6, V-10). | A readability redesign could be right on desktop and wrong at 820px. `LABEL_MAX_PX` was picked on a desktop. | V-10 is a gate, not a nicety: check at 820×1180 in step 7 and revise the width and text size before calling this done. Q5 still has no owner — recommend assigning one. |
+| **Tablet legibility is unverified** (Q2/Q5, NFR-6, V-10). | A readability redesign could be right on desktop and wrong at 820px. `LABEL_MAX_PX` was picked on a desktop. | **Checked at 820×1180 in step 7, and it failed first time** — the scene was cropped at both edges, which is what produced the framing mechanism change above. It now fits, in both themes, with all four ring topics in distinct regions and every label legible at 10px. Q5's *design* answer is therefore settled; Q5 still has no owner for future device questions — recommend assigning one. |
 
 **Rollback:** one `git revert` of the feature commit. Nothing is migrated, persisted or
 published; the change is constants, one algorithm branch, CSS properties and a name in
