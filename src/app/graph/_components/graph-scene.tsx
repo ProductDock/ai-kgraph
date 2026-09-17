@@ -38,18 +38,42 @@ import { UnsupportedNotice } from "./unsupported-notice";
  * depend on which numbers these are.
  */
 const CAMERA_FOV = 50;
-/** Multiples of the scene radius. */
-const OVERVIEW_DISTANCE = 1.8;
-const FOG_NEAR = 1.1;
-const FOG_FAR = 3.6;
-const LABEL_NEAR = 0.9;
-const LABEL_FAR = 2.8;
+/** Breathing room left around the graph once it has been fitted to the frame. */
+const OVERVIEW_MARGIN = 1.06;
+/**
+ * Fog and label fade are multiples of how far the camera currently is from what it
+ * is looking at, not of the scene radius. The scene radius is fixed, but the view
+ * distance is not: it differs between a desktop and a portrait tablet (the fit in
+ * `overviewDistance`) and again every time the viewer dollies. Keyed to the scene
+ * radius, the whole graph fell inside the fade band on a tablet and dissolved into
+ * the page - visible only by looking, which is why §9.6 left these to be retuned.
+ */
+const FOG_NEAR = 0.75;
+const FOG_FAR = 2.2;
+const LABEL_NEAR = 0.55;
+const LABEL_FAR = 1.8;
+/**
+ * The polar band the camera is fenced into (spec FR-6, NFR-2, §9.3): always looking
+ * somewhat down onto the ring. `MIN_POLAR` keeps it away from the ring's axis, where
+ * every topic lines up behind the hub; `MAX_POLAR` stops short of level with the
+ * ring, so a viewer can never end up under it looking at the back of everything.
+ * Azimuth stays unrestricted - turning the whole graph around is the part of the old
+ * freedom the intent keeps.
+ */
+const MIN_POLAR = Math.PI * 0.18;
+const MAX_POLAR = Math.PI * 0.36;
+/** Inside the band, tilted rather than parked at either edge of it (spec §9.4). */
+const OPENING_POLAR = Math.PI * 0.3;
+/** Multiples of the ring's own radius: how close the camera may ever get. */
+const RING_CLEARANCE = 1.15;
 const HOVER_SCALE = 1.3;
 const HOVER_MS = 120;
 const FOCUS_SCALE = 1.2;
 /** Enough movement between press and release to have been an orbit, not a click. */
 const CLICK_SLOP_PX = 5;
 const LABEL_INTERVAL_MS = 1000 / 30;
+
+const WORLD_UP = new Vector3(0, 1, 0);
 
 const SCENE_TOKENS = [
   ...Array.from({ length: MAX_DEPTH + 1 }, (_, depth) => depthToken(depth)),
@@ -94,6 +118,17 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     const { nodes, edges } = scene;
     const indexById = new Map(nodes.map((node, index) => [node.id, index]));
     const sceneRadius = scene.radius || 1;
+    // Read off the positions the server already sent rather than re-derived from
+    // the layout's constants - `lib/graph` keeps its numbers to itself, and the
+    // client only ever received positions (spec §7.6). The fallback matters only
+    // for a hypothetical seed with no depth-1 node at all.
+    const ringNodes = nodes.filter((node) => node.depth === 1);
+    const ringRadius =
+      ringNodes.reduce(
+        (max, node) => Math.max(max, Math.hypot(...node.position)),
+        0,
+      ) || sceneRadius * 0.5;
+    const minOrbitDistance = ringRadius * RING_CLEARANCE;
 
     // ---- renderer, camera, controls -------------------------------------------
     const renderer = new WebGLRenderer({ antialias: true, alpha: false });
@@ -106,11 +141,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     container.appendChild(canvas);
 
     const world = new Scene();
-    const fog = new Fog(
-      0xffffff,
-      sceneRadius * FOG_NEAR,
-      sceneRadius * FOG_FAR,
-    );
+    // Range is set per frame from the view distance; these are placeholders.
+    const fog = new Fog(0xffffff, sceneRadius, sceneRadius * 3);
     world.fog = fog;
 
     const camera = new PerspectiveCamera(
@@ -119,7 +151,20 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       sceneRadius / 100,
       sceneRadius * 12,
     );
-    camera.position.set(0, sceneRadius * 0.5, sceneRadius * OVERVIEW_DISTANCE);
+    // Halfway between two ring topics rather than facing one head-on: with the
+    // topics evenly spaced that is the only azimuth where none of them starts out
+    // hidden behind another (spec FR-7, §9.4). Derived from the positions, so a
+    // fifth topic moves this angle instead of invalidating it.
+    const firstRing = ringNodes[0];
+    const openingAzimuth = firstRing
+      ? Math.atan2(firstRing.position[2], firstRing.position[0]) +
+        Math.PI / ringNodes.length
+      : 0;
+    const openingDirection = new Vector3(
+      Math.sin(OPENING_POLAR) * Math.cos(openingAzimuth),
+      Math.cos(OPENING_POLAR),
+      Math.sin(OPENING_POLAR) * Math.sin(openingAzimuth),
+    );
 
     const controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
@@ -130,8 +175,12 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     // Panning is not in the intent and it is the fastest way to lose the graph
     // off-screen (FR-6).
     controls.enablePan = false;
-    controls.minDistance = sceneRadius * 0.15;
+    // Keyed to the ring rather than to the whole scene, so "cannot fly into the
+    // middle" holds however the scene is scaled (spec NFR-3, §9.3).
+    controls.minDistance = minOrbitDistance;
     controls.maxDistance = sceneRadius * 5;
+    controls.minPolarAngle = MIN_POLAR;
+    controls.maxPolarAngle = MAX_POLAR;
 
     // ---- nodes: one InstancedMesh, one draw call (NFR-2) ----------------------
     // Unlit, so the pixel colour is the token colour: a lit material would shade
@@ -255,6 +304,28 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       return animatingScales.size > 0;
     }
 
+    /**
+     * `controls.minDistance` is measured from the orbit target, and the target moves
+     * to the clicked node on focus - so on its own it stops guaranteeing anything
+     * about the hub as soon as a viewer has flown into a branch, which is exactly
+     * the state using the feature puts them in. This is the origin-relative half of
+     * FR-6: wherever the target is, the camera stays outside the ring.
+     *
+     * It must not call `invalidate()`. It runs inside a frame, and scheduling from
+     * there is the silent 60fps loop the `inFrame` guard exists to prevent.
+     */
+    function keepOutsideRing() {
+      const distance = camera.position.length();
+      if (distance >= minOrbitDistance) return;
+      if (distance === 0) {
+        // Unreachable in practice, but scaling a zero-length vector is a NaN
+        // camera and a blank canvas, so it is handled rather than trusted.
+        camera.position.set(0, minOrbitDistance, 0);
+        return;
+      }
+      camera.position.multiplyScalar(minOrbitDistance / distance);
+    }
+
     function stepCamera(now: number): boolean {
       if (!cameraTween) return false;
       const { progress, done } = cameraTween.tween.sample(
@@ -274,7 +345,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       return !done;
     }
 
-    function updateLabels(now: number) {
+    function updateLabels(now: number, viewDistance: number) {
       if (now - lastLabelsAt < LABEL_INTERVAL_MS) return;
       lastLabelsAt = now;
 
@@ -286,8 +357,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         camera.position.y,
         camera.position.z,
       ] as const;
-      const near = sceneRadius * LABEL_NEAR;
-      const far = sceneRadius * LABEL_FAR;
+      const near = viewDistance * LABEL_NEAR;
+      const far = viewDistance * LABEL_FAR;
       const { clientWidth: width, clientHeight: height } = container!;
       const projected = new Vector3();
 
@@ -300,15 +371,24 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
               projected.project(camera);
 
               const behindCamera = projected.z > 1;
+              // The hub's name is exempt from the distance fade - it is the label a
+              // viewer takes their bearings from, and a hub whose name dissolves as
+              // you back away is a dot with a caption again (spec FR-1, §9.2). Only
+              // the fade is exempt: a hub genuinely behind the camera still goes,
+              // or its name would float over whatever is in front of it.
+              const isRoot = node.parentId === null;
               const opacity = behindCamera
                 ? 0
-                : Math.min(1, Math.max(0, (far - distance) / (far - near)));
+                : isRoot
+                  ? 1
+                  : Math.min(1, Math.max(0, (far - distance) / (far - near)));
 
               return {
                 text: node.name,
                 x: ((projected.x + 1) / 2) * width,
                 y: ((1 - projected.y) / 2) * height,
                 opacity,
+                centred: isRoot,
               };
             },
           ),
@@ -328,14 +408,61 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       const scalesMoving = stepScales(deltaMs);
       // Returns true while damping is still settling.
       const dampingMoving = controls.update();
+      keepOutsideRing();
+
+      const viewDistance = camera.position.distanceTo(controls.target);
+      fog.near = viewDistance * FOG_NEAR;
+      fog.far = viewDistance * FOG_FAR;
 
       renderer.render(world, camera);
-      updateLabels(now);
+      updateLabels(now, viewDistance);
       inFrame = false;
 
       // The only place the next frame is scheduled: whether one is needed is a
       // question about the animations, not about how many events fired.
       if (cameraMoving || scalesMoving || dampingMoving) invalidate();
+    }
+
+    /**
+     * How far back the camera has to sit, looking from `direction`, for the whole
+     * graph to fit the frame.
+     *
+     * Solved against the actual node positions rather than the bounding sphere,
+     * because the graph is far wider than it is tall: a sphere fit frames mostly
+     * empty space. And solved per axis, because `PerspectiveCamera`'s fov is the
+     * *vertical* one - on a portrait tablet the horizontal extent is what binds,
+     * and a fixed multiple of the scene radius crops the sides. The spec assumed
+     * distance alone was enough at any screen size (§3 Q5, §9.4); it is not, and
+     * this is what makes V-10's tablet check pass rather than be waived.
+     */
+    function overviewDistance(direction: Vector3): number {
+      const { clientWidth: width, clientHeight: height } = container!;
+      const aspect = width && height ? width / height : 1;
+      const tanV = Math.tan((CAMERA_FOV * Math.PI) / 360);
+      const tanH = tanV * aspect;
+
+      const forward = direction.clone().normalize().negate();
+      const right = new Vector3().crossVectors(forward, WORLD_UP);
+      // The polar fence rules out a view straight down the up axis, so this is
+      // only ever degenerate if the fence is removed.
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      right.normalize();
+      const up = new Vector3().crossVectors(right, forward).normalize();
+
+      const point = new Vector3();
+      let distance = minOrbitDistance;
+      for (const node of nodes) {
+        point.set(...node.position);
+        // Behind the target counts as negative depth, which correctly *reduces*
+        // the distance a near node needs.
+        const depth = point.dot(forward);
+        distance = Math.max(
+          distance,
+          (Math.abs(point.dot(right)) + node.radius) / tanH - depth,
+          (Math.abs(point.dot(up)) + node.radius) / tanV - depth,
+        );
+      }
+      return distance * OVERVIEW_MARGIN;
     }
 
     // ---- camera framing --------------------------------------------------------
@@ -361,16 +488,22 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
 
     function focusNode(index: number) {
       const node = nodes[index]!;
-      const children = nodes.filter((child) => child.parentId === node.id);
       const centre = new Vector3(...node.position);
 
-      // Frame the node *and its children*, which is what makes click-to-fly useful
-      // on a tree this deep (FR-6).
+      // Frame the node, its children *and* what it hangs off (spec FR-9): a cluster
+      // whose top you cannot see does not tell you where you are in the tree. The
+      // root has no parent, so clicking the hub keeps the framing it always had.
+      const framed = nodes.filter((child) => child.parentId === node.id);
+      const parentIndex =
+        node.parentId === null ? undefined : indexById.get(node.parentId);
+      if (parentIndex !== undefined) framed.push(nodes[parentIndex]!);
+
       let extent = node.radius * 4;
-      for (const child of children) {
+      for (const relative of framed) {
         extent = Math.max(
           extent,
-          centre.distanceTo(new Vector3(...child.position)) + child.radius * 2,
+          centre.distanceTo(new Vector3(...relative.position)) +
+            relative.radius * 2,
         );
       }
       const distance = extent / Math.sin((CAMERA_FOV * Math.PI) / 360);
@@ -389,7 +522,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       }
       setFocusedId(null);
       focusedIdRef.current = null;
-      flyTo(new Vector3(0, 0, 0), sceneRadius * OVERVIEW_DISTANCE);
+      const direction = camera.position.clone().sub(controls.target);
+      if (direction.lengthSq() === 0) direction.copy(openingDirection);
+      flyTo(new Vector3(0, 0, 0), overviewDistance(direction));
     }
 
     function setScaleTarget(index: number, target: number) {
@@ -484,6 +619,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     controls.addEventListener("change", invalidate);
 
     onResize();
+    camera.position
+      .copy(openingDirection)
+      .multiplyScalar(overviewDistance(openingDirection));
     invalidate();
 
     // ---- teardown (R-12, V-19) -------------------------------------------------

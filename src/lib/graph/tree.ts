@@ -4,7 +4,7 @@ import { MAX_NODES, graphSeedSchema } from "@/lib/graph/schema";
 import type { GraphEdge, GraphNode, GraphSeed } from "@/lib/graph/types";
 
 /**
- * Ids are the slugified name path - `ai/n-node/rag/vector-db/pgvector`. Derived, so
+ * Ids are the slugified name path - `pd-ai/n-node/rag/vector-db/pgvector`. Derived, so
  * they stay stable when siblings are reordered, and `[a-z0-9-/]` only, so they are
  * safe as React keys and in any selector (spec §7.3, §8.2).
  */

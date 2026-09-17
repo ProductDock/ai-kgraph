@@ -55,15 +55,40 @@ that one file and a PR. `src/lib/graph/` is framework-agnostic: it imports nothi
 changes no file in it.
 
 - **The tree is capped at five levels (depth 0–4), and the day-one seed already hits it.**
-  The deepest node is `ai/n-node/rag/vector-db/pgvector`. A sixth level fails the build
+  The deepest node is `pd-ai/n-node/rag/vector-db/pgvector`. A sixth level fails the build
   with a message naming the node — deliberately, because depth is encoded by a five-step
   colour ramp and a sixth level would have no colour. Raising the cap means adding a
   `--graph-depth-5` step, bumping `MAX_DEPTH` in `src/lib/graph/palette.ts`, **and
   re-running the `dataviz` validator in both modes**. It is not a one-line change.
+- **The shape is a hub, a ring, and branches growing outward** (`intent/graph-ring-readability/`).
+  Depth 1 is placed on one horizontal circle at `RING_RADIUS`, with the azimuth split
+  **evenly** between topics regardless of what each carries — the one place the layout's
+  "room in proportion to your subtree" rule is deliberately not applied, because the ring
+  is meant to be a frame you can take your bearings from. Depth 2 and deeper keep that
+  rule untouched. Each ring topic's cone is capped under a half-slice, which is what keeps
+  two branches from ever interleaving; `layout.test.ts` asserts it.
+- **The hub-to-ring gap is its own constant** (`RING_RADIUS`), deliberately wider than the
+  `SHELL_GAP` used between later shells. That gap is what makes the middle read as the
+  middle, so it is not a number to "tidy up" into the uniform spacing.
+- **The camera is fenced, on purpose.** Azimuth is free; polar angle is clamped to roughly
+  32°–65° so the scene can never be viewed down the ring's axis or from underneath, and
+  distance is clamped to outside the ring. The fence has _two_ halves and both are needed:
+  `OrbitControls`' `minDistance` is measured from the orbit target, which moves to the
+  clicked node on focus, so `keepOutsideRing()` re-clamps against the origin every frame.
+  Measured: without it the camera reaches 6.2 from the origin, inside a ring of radius 20.
+- **The opening view is solved, not a constant.** `overviewDistance()` fits the camera to
+  the actual node positions per screen axis. A fixed multiple of the scene radius does not
+  work: `PerspectiveCamera`'s fov is _vertical_, so a portrait tablet crops the sides, and
+  the graph is far wider than it is tall so a bounding-sphere fit frames empty space. Fog
+  and label-fade ranges are multiples of the **current view distance** for the same reason.
+- **Clicking a node frames its parent as well as its children**, so you can always see
+  what the thing you clicked hangs off. The root has no parent and keeps its own framing.
 - The seed schema is `.strict()`: unknown keys fail the build. `status`, `assignee` and
   page links are deliberately not reserved — they arrive when those features do.
-- Node ids are the slugified name path (`ai/ai-agents/workflows/n8n`), so **sibling names
-  must be unique**. A duplicate fails the build.
+- Node ids are the slugified name path (`pd-ai/ai-agents/workflows/n8n`), so **sibling
+  names must be unique**. A duplicate fails the build. The path includes the root, so
+  **renaming the root moves every id in the tree** — that is a find-and-replace across
+  the tests, and it would be a breaking change the day an id becomes a deep link.
 - **New tokens in `globals.css`:** `--graph-depth-0…4` (the validated ordinal ramp),
   `--graph-edge` and `--graph-label-halo`, declared in all three scopes. They are **not**
   bridged into `@theme inline` — they are not shadcn slots, following the
@@ -73,6 +98,9 @@ changes no file in it.
 - The scene reads those tokens off the DOM (`use-theme-tokens.ts`), **not** from
   `useUiStore` — that store hardcodes `theme: "light"` and never hydrates, so it does not
   describe the DOM. Do not "simplify" it to use the store.
+- **Labels are 10px, truncated with an ellipsis at `LABEL_MAX_PX`.** `declutter`'s rough
+  text metrics are derived from the font size and clamped to that same width — change one
+  and the collision boxes stop matching the text actually drawn.
 - **Single click is spent on camera focus.** The deferred node popup gets **double-click
   on desktop and long-press on tablet** — decided, not built. Picking already resolves to
   a node id in one handler in `graph-scene.tsx`, which is where it attaches.

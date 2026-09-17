@@ -15,6 +15,31 @@ function lengthOf(v: Vec3): number {
   return Math.hypot(v[0], v[1], v[2]);
 }
 
+/** Angle around the ring's vertical axis, in radians. */
+function azimuthOf(v: Vec3): number {
+  return Math.atan2(v[2], v[0]);
+}
+
+/** The smaller of the two ways round between two azimuths. */
+function azimuthGap(a: number, b: number): number {
+  const raw = Math.abs(a - b) % (2 * Math.PI);
+  return raw > Math.PI ? 2 * Math.PI - raw : raw;
+}
+
+const ring = nodes.filter((node) => node.depth === 1);
+
+/** Which ring topic a node's branch hangs off, for every node below the ring. */
+function ringTopicOf(): Map<string, string> {
+  const topics = new Map<string, string>();
+  for (const node of nodes) {
+    if (node.depth === 1) topics.set(node.id, node.id);
+    else if (node.parentId && topics.has(node.parentId)) {
+      topics.set(node.id, topics.get(node.parentId)!);
+    }
+  }
+  return topics;
+}
+
 /** 148 nodes - the envelope NFR-1 was written against, not the day-one 36. */
 function syntheticSeed(): GraphNode[] {
   const wide: GraphNode[] = [];
@@ -41,7 +66,7 @@ describe("layout", () => {
     const positions = layout(nodes);
 
     expect(positions.size).toBe(nodes.length);
-    expect(positions.get("ai")).toEqual([0, 0, 0]);
+    expect(positions.get("pd-ai")).toEqual([0, 0, 0]);
     expect(
       nodes.filter((node) => lengthOf(positions.get(node.id)!) === 0),
     ).toHaveLength(1);
@@ -72,6 +97,95 @@ describe("layout", () => {
       expect(lengthOf(positions.get(node.id)!)).toBeGreaterThan(
         lengthOf(positions.get(node.parentId)!),
       );
+    }
+  });
+
+  // V-1
+  it("puts the root's children on one horizontal ring", () => {
+    const positions = layout(nodes);
+    expect(ring.length).toBeGreaterThan(1);
+
+    const [first, ...rest] = ring.map((node) => positions.get(node.id)!);
+    for (const position of rest) {
+      expect(lengthOf(position)).toBeCloseTo(lengthOf(first!), 9);
+      // One elevation, so depth 1 is a circle rather than a spherical shell - the
+      // thing that makes the ring read as a ring from every allowed camera angle.
+      expect(position[1]).toBeCloseTo(first![1], 9);
+    }
+  });
+
+  // V-2
+  it("gives every ring topic the same slice, whatever it carries", () => {
+    const positions = layout(nodes);
+    // The decision under test is only meaningful if the topics differ in size
+    // (spec §3, Q3): equal arcs for equal branches would prove nothing.
+    expect(new Set(ring.map((node) => node.leafCount)).size).toBeGreaterThan(1);
+
+    const azimuths = ring
+      .map((node) => azimuthOf(positions.get(node.id)!))
+      .sort((a, b) => a - b);
+    const slice = (2 * Math.PI) / ring.length;
+
+    for (let i = 1; i < azimuths.length; i += 1) {
+      expect(azimuths[i]! - azimuths[i - 1]!).toBeCloseTo(slice, 9);
+    }
+  });
+
+  // V-3
+  it("leaves a wider gap between hub and ring than between any later shells", () => {
+    const positions = layout(nodes);
+    const shells = [
+      ...new Map(
+        nodes.map((node) => [node.depth, lengthOf(positions.get(node.id)!)]),
+      ).entries(),
+    ].sort((a, b) => a[0] - b[0]);
+
+    // The hub is a sphere at the origin, so the gap a viewer sees starts at its
+    // surface, not at its centre.
+    const hubToRing = shells[1]![1] - radiusForDepth(0);
+    const laterGaps = shells
+      .slice(2)
+      .map((shell, index) => shell[1] - shells[index + 1]![1]);
+
+    expect(laterGaps.length).toBeGreaterThan(0);
+    expect(hubToRing).toBeGreaterThan(Math.max(...laterGaps));
+  });
+
+  // V-5
+  it("gives a ring topic with nothing under it its place on the ring anyway", () => {
+    const { nodes: sparse } = flatten({
+      name: "AI",
+      children: [
+        { name: "Full", children: [{ name: "Child" }] },
+        { name: "Empty" },
+      ],
+    });
+    const positions = layout(sparse);
+    const empty = sparse.find((node) => node.name === "Empty")!;
+    const full = sparse.find((node) => node.name === "Full")!;
+
+    expect(positions.size).toBe(sparse.length);
+    expect(lengthOf(positions.get(empty.id)!)).toBeCloseTo(
+      lengthOf(positions.get(full.id)!),
+      9,
+    );
+  });
+
+  // FR-4
+  it("keeps every branch inside its own topic's slice of the ring", () => {
+    const positions = layout(nodes);
+    const topics = ringTopicOf();
+    // Half a slice is where a neighbour's territory begins: stay inside it and two
+    // branches can never interleave, however deep either one runs.
+    const halfSlice = Math.PI / ring.length;
+
+    for (const [id, topicId] of topics) {
+      expect(
+        azimuthGap(
+          azimuthOf(positions.get(id)!),
+          azimuthOf(positions.get(topicId)!),
+        ),
+      ).toBeLessThan(halfSlice);
     }
   });
 

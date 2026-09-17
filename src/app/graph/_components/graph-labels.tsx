@@ -15,15 +15,38 @@ export interface LabelPlacement {
   x: number;
   y: number;
   opacity: number;
+  /**
+   * Drawn on the node rather than above it - the hub, whose name belongs inside its
+   * circle (spec FR-1, §9.2). It changes both the transform and the box `declutter`
+   * reserves, so the two cannot disagree about where the text is.
+   */
+  centred?: boolean;
 }
 
+/** The type size labels are set in. Deliberately small (intent, "labels are
+ * small"): a label says which node you are looking at, and at this size it names
+ * the shapes without competing with them. */
+const LABEL_FONT_PX = 10;
+
 /**
- * Rough text metrics, in pixels, for the 13px Poppins the labels are set in.
- * Measuring for real would mean a layout read per label per frame; the declutter
- * only needs to know roughly where the words are.
+ * Rough text metrics, in pixels, for the Poppins the labels are set in. These
+ * track `LABEL_FONT_PX` - measuring for real would mean a layout read per label
+ * per frame, and the declutter only needs to know roughly where the words are, but
+ * it does need to agree with what is drawn.
  */
-const LABEL_CHAR_WIDTH = 6.6;
-const LABEL_HEIGHT = 16;
+const LABEL_CHAR_WIDTH = LABEL_FONT_PX * 0.51;
+const LABEL_HEIGHT = LABEL_FONT_PX * 1.3;
+
+/**
+ * How wide a label may get before it is cut off with an ellipsis (spec FR-8). A
+ * label says which node you are looking at; it is not where the whole title is read,
+ * and an untruncated one runs across the scene over everything behind it.
+ *
+ * Roughly twenty characters at the metrics above. Provisional until it has been seen
+ * on a tablet-sized viewport, which is the check the spec schedules rather than
+ * skips (spec §3 Q2/Q5, NFR-6, V-10).
+ */
+export const LABEL_MAX_PX = 132;
 
 export interface GraphLabelsHandle {
   apply(placements: LabelPlacement[]): void;
@@ -90,13 +113,17 @@ export function declutter(placements: LabelPlacement[]): LabelPlacement[] {
   return placements.map((placement) => {
     if (placement.opacity <= 0) return placement;
 
-    const halfWidth = (placement.text.length * LABEL_CHAR_WIDTH) / 2;
-    // The pool draws each label above its node, per the transform below.
+    // Clamped to what is actually drawn: past the truncation width the text stops
+    // getting wider, and a box that kept growing would suppress a neighbouring
+    // label to protect pixels the ellipsis already ate.
+    const halfWidth =
+      Math.min(placement.text.length * LABEL_CHAR_WIDTH, LABEL_MAX_PX) / 2;
+    // Matching the transform below: above the node, or centred on it.
     const box = {
       left: placement.x - halfWidth,
       right: placement.x + halfWidth,
-      top: placement.y - LABEL_HEIGHT * 1.9,
-      bottom: placement.y - LABEL_HEIGHT * 0.4,
+      top: placement.y - LABEL_HEIGHT * (placement.centred ? 0.5 : 1.9),
+      bottom: placement.y - LABEL_HEIGHT * (placement.centred ? -0.5 : 0.4),
     };
     const collides = kept.some(
       (other) =>
@@ -145,7 +172,7 @@ export function GraphLabels({
         element.textContent = placement.text;
         element.style.visibility = "visible";
         element.style.opacity = String(placement.opacity);
-        element.style.transform = `translate3d(${placement.x}px, ${placement.y}px, 0) translate(-50%, -140%)`;
+        element.style.transform = `translate3d(${placement.x}px, ${placement.y}px, 0) translate(-50%, ${placement.centred ? "-50%" : "-140%"})`;
       }
     },
   }));
@@ -165,7 +192,12 @@ export function GraphLabels({
             visibility: "hidden",
             willChange: "transform, opacity",
             whiteSpace: "nowrap",
-            fontSize: "13px",
+            // FR-8. `declutter` clamps its width estimate to the same number, so
+            // the box it reserves and the text the browser draws agree.
+            maxWidth: `${LABEL_MAX_PX}px`,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            fontSize: `${LABEL_FONT_PX}px`,
             fontWeight: 500,
             lineHeight: 1,
             color: "var(--text-primary)",
