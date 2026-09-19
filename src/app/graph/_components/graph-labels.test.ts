@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flatten } from "@/lib/graph/tree";
-import { layout } from "@/lib/graph/layout";
-import { radiusForDepth } from "@/lib/graph/palette";
+import { buildScene } from "@/lib/graph/scene";
 import type { GraphSceneNode, Vec3 } from "@/lib/graph/types";
 import {
   declutter,
@@ -12,7 +10,7 @@ import {
 
 /** 148 nodes - the envelope NFR-1 was written against, not the day-one 36. */
 function wideScene(): GraphSceneNode[] {
-  const { nodes } = flatten({
+  return buildScene({
     name: "AI",
     children: Array.from({ length: 7 }, (_, area) => ({
       name: `Area ${area}`,
@@ -23,13 +21,7 @@ function wideScene(): GraphSceneNode[] {
         })),
       })),
     })),
-  });
-  const positions = layout(nodes);
-  return nodes.map((node) => ({
-    ...node,
-    position: positions.get(node.id) as Vec3,
-    radius: radiusForDepth(node.depth),
-  }));
+  }).nodes;
 }
 
 const nodes = wideScene();

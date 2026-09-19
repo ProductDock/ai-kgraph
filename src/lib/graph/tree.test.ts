@@ -34,6 +34,17 @@ describe("flatten", () => {
     );
   });
 
+  it("records whether anything hangs off each node", () => {
+    const byId = new Map(flatten(seed).nodes.map((node) => [node.id, node]));
+
+    expect(byId.get("pd-ai/protocols")?.hasChildren).toBe(true);
+    expect(byId.get("pd-ai/protocols/a2a")?.hasChildren).toBe(false);
+    // Not derivable from leafCount: a node with one leaf child and a childless
+    // leaf both count 1, which is why the flag exists at all.
+    expect(byId.get("pd-ai/n-node/rag")?.leafCount).toBe(3);
+    expect(byId.get("pd-ai/n-node/rag")?.hasChildren).toBe(true);
+  });
+
   it("emits every node before its own children", () => {
     const { nodes } = flatten(seed);
     const seen = new Set<string>();

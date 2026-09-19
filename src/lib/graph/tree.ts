@@ -87,7 +87,7 @@ export function flatten(seed: GraphSeed): {
 
     if (depth > MAX_DEPTH) {
       throw new Error(
-        `Invalid graph seed - "${node.name}" sits at depth ${depth} (${path}). The tree is capped at ${MAX_DEPTH + 1} levels because the depth ramp has ${MAX_DEPTH + 1} colour steps; see CLAUDE.md before raising it.`,
+        `Invalid graph seed - "${node.name}" sits at depth ${depth} (${path}). The tree is capped at ${MAX_DEPTH + 1} levels to keep it readable and authorable at a glance; see CLAUDE.md before raising it.`,
       );
     }
     // Sibling names are what make the id path unique, so a collision here means two
@@ -106,10 +106,17 @@ export function flatten(seed: GraphSeed): {
     }
 
     const index = nodes.length;
-    nodes.push({ id, name: node.name, depth, parentId, leafCount: 1 });
+    const children = node.children ?? [];
+    nodes.push({
+      id,
+      name: node.name,
+      depth,
+      parentId,
+      leafCount: 1,
+      hasChildren: children.length > 0,
+    });
     if (parentId !== null) edges.push({ sourceId: parentId, targetId: id });
 
-    const children = node.children ?? [];
     if (children.length === 0) return 1;
 
     let leafCount = 0;

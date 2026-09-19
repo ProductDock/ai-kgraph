@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/common/theme-toggle";
 import { buildScene } from "@/lib/graph/scene";
 import { seed } from "@/lib/graph/seed";
-import { DepthKey } from "./_components/depth-key";
+import { BranchKey } from "./_components/branch-key";
 import { GraphView } from "./_components/graph-view";
 
 export const metadata: Metadata = {
@@ -42,7 +42,9 @@ export default function GraphPage() {
         </div>
 
         <div className="flex items-center gap-6">
-          <DepthKey />
+          <BranchKey
+            topics={scene.nodes.filter((node) => node.depth === 1)}
+          />
           {/* Page-level in this repo rather than in the layout, so a new route
               silently loses it unless it asks. */}
           <ThemeToggle />

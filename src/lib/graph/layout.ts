@@ -1,4 +1,4 @@
-import { radiusForDepth } from "@/lib/graph/palette";
+import { radiusForNode } from "@/lib/graph/palette";
 import type { GraphNode, Vec3 } from "@/lib/graph/types";
 
 /**
@@ -208,7 +208,7 @@ export function layout(nodes: GraphNode[]): Map<string, Vec3> {
 export function sceneRadius(nodes: GraphNode[]): number {
   return nodes.reduce(
     (max, node) =>
-      Math.max(max, shellRadius(node.depth) + radiusForDepth(node.depth)),
+      Math.max(max, shellRadius(node.depth) + radiusForNode(node)),
     0,
   );
 }

@@ -24,6 +24,12 @@ export interface GraphNode {
   parentId: string | null;
   /** Leaves in this node's subtree; a leaf counts as 1. Drives layout (spec §7.7). */
   leafCount: number;
+  /**
+   * Whether anything hangs off this node. Not derivable from `leafCount`: a node
+   * with one leaf child and a childless leaf both count 1. Drives colour and size
+   * (branch-colour spec §8.2, §8.4).
+   */
+  hasChildren: boolean;
 }
 
 export interface GraphEdge {
@@ -37,6 +43,12 @@ export type Vec3 = readonly [number, number, number];
 export interface GraphSceneNode extends GraphNode {
   position: Vec3;
   radius: number;
+  /**
+   * The CSS custom property carrying this node's fill, resolved once at build time
+   * rather than re-derived per frame (branch-colour spec §7). A token name, never a
+   * hex: `globals.css` stays the one place a colour is spelled out.
+   */
+  colourToken: string;
 }
 
 /**
