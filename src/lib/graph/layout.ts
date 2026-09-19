@@ -12,16 +12,29 @@ import type { GraphNode, Vec3 } from "@/lib/graph/types";
  * not depend on which numbers these are.
  */
 
-/** Distance between consecutive depth shells, from the ring outward. */
-const SHELL_GAP = 12;
+/**
+ * Distance between consecutive depth shells, from the ring outward. Moves in step
+ * with `RING_RADIUS`: both were scaled by a shared 0.6 to close the emptiness the
+ * opening view used to lead with (tighter-spacing intent). Scaling the pair scales
+ * every centre-to-centre distance by the same factor while no node radius moves, so
+ * the floor `layout.test.ts` asserts is what bounds how far this can go: measured
+ * against the 148-node synthetic seed, a shared multiplier below ~0.44 of the
+ * original `20`/`12` breaks it. This pair sits at 0.6 of them.
+ */
+const SHELL_GAP = 7.2;
 
 /**
  * Hub -> ring. Deliberately larger than `SHELL_GAP`: this gap is the whole
  * mechanism behind "the middle reads as the middle" (spec FR-2, V-3). A tuning
  * value like the rest, but the invariant it has to satisfy - wider than any later
  * shell increment - is asserted in `layout.test.ts`.
+ *
+ * Shrinking this and `SHELL_GAP` together is how the tree is tightened; see the
+ * measured floor on `SHELL_GAP`. `HUB_RADIUS` does not scale with them, so the
+ * surface-to-surface margin behind that assertion narrows faster than the
+ * multiplier does - another reason not to take the pair much lower.
  */
-const RING_RADIUS = 20;
+const RING_RADIUS = 12;
 
 /**
  * How much of the room left over after a child's own cone is reserved the spiral

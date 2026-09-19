@@ -148,14 +148,19 @@ console.log(pair);
 '
 ```
 
-Expected at `k = 0.6`: closest pair `3.59` apart, `GROUP_RADIUS` ceiling `~1.43`, ratio
+Expected at `k = 0.6`: closest pair `3.59` apart, `GROUP_RADIUS` ceiling `~1.44`, ratio
 `1.37`. Those three numbers are what `palette.ts` and `CLAUDE.md` must end up quoting.
+(Measured during implementation: `ai/area-5/topic-0 <-> ai/area-5/topic-3 d=3.59
+ratio=1.367 ceiling=1.44`. The ceiling was written `~1.43` above while planning; `1.44`
+is what the script prints and what the two doc sites now quote.)
 
 Manual, on `npm run dev` at `/graph`, against the step-1 baseline screenshot:
 
 - **V-4/V-5** — same window size, first load, before vs after: the tree fills visibly more
   of the canvas and every circle is visibly bigger (expect roughly `1/0.6 ≈ 1.67×` apparent
-  size; the simulated opening distance drops `96.6 → 58.3` on a 16:9 window).
+  size; the simulated opening distance drops `96.6 → 58.3` on a 16:9 window, and
+  `213.3 → 128.7` on a 9:16 phone — both re-measured during implementation against the
+  real seed, the phone figure landing at `128.7` rather than the `129.2` estimated here).
 - **V-6** — scroll in as far as the camera allows; the camera's distance from the origin
   bottoms out at `23`, the same absolute value as today. Check in dev tools or by comparing
   side by side with a build of `main`.

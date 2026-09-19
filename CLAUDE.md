@@ -83,8 +83,9 @@ changes no file in it.
 - **`GROUP_RADIUS` is bounded by a test, not by taste.** `layout.test.ts` floors every node
   pair's centre distance at 2.5× the larger radius, and deep groups — which took the
   _smallest_ radii under the old ramp — now take this one. Measured, the closest pair
-  involving a group sits 5.98 apart in the 148-node synthetic seed, so anything past ~2.39
-  fails that test. It is at 1.05.
+  involving a group sits 3.59 apart in the 148-node synthetic seed, so anything past ~1.44
+  fails that test. It is at 1.05. Both of those distances scale with the layout's spacing
+  constants and `GROUP_RADIUS` does not, so tightening the tree again lowers that ceiling.
 - **The shape is a hub, a ring, and branches growing outward** (`intent/graph-ring-readability/`).
   Depth 1 is placed on one horizontal circle at `RING_RADIUS`, with the azimuth split
   **evenly** between topics regardless of what each carries — the one place the layout's
@@ -100,7 +101,9 @@ changes no file in it.
   distance is clamped to outside the ring. The fence has _two_ halves and both are needed:
   `OrbitControls`' `minDistance` is measured from the orbit target, which moves to the
   clicked node on focus, so `keepOutsideRing()` re-clamps against the origin every frame.
-  Measured: without it the camera reaches 6.2 from the origin, inside a ring of radius 20.
+  Measured: without it the camera reaches 6.2 from the origin, inside a ring of radius 12.
+  The clamp itself (`MIN_ORBIT_DISTANCE`) is an absolute 23, deliberately no longer derived
+  from the ring: the ring shrank when the layout was tightened and the fence did not.
 - **The opening view is solved, not a constant.** `overviewDistance()` fits the camera to
   the actual node positions per screen axis. A fixed multiple of the scene radius does not
   work: `PerspectiveCamera`'s fov is _vertical_, so a portrait tablet crops the sides, and
