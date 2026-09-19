@@ -39,9 +39,10 @@ This spec replaces both rules with two new ones. **Colour now means "which group
 "how deep": every topic that has anything under it gets its own colour, and everything
 directly under it that itself carries nothing is drawn in one lighter version of that same
 colour — so a viewer can look at any dot on the rim and know which topic it belongs to
-without following a single edge. **Size now means "does this carry anything,"** not "how
-deep": anything with children is visibly bigger than a leaf, full stop, wherever in the tree
-it sits, and every leaf is the same small size. Depth stops being shown at all — distance
+without following a single edge. **Size now means "is this a group,"** not "how deep":
+anything with children is visibly bigger than a leaf, full stop, wherever in the tree it sits,
+every leaf below the ring is the same small size, and every topic on the ring is group-sized
+whether or not it has been filled in yet (§4, D-2). Depth stops being shown at all — distance
 from the centre already says it, so colour and size are now free to say something else.
 
 Nothing about what's *in* the graph changes. The content, the shape of the tree, the camera,
@@ -66,8 +67,9 @@ else about the page.
   own colour and a place in the on-screen key.
 - Any two groups that sit next to each other, either in the tree or as drawn on screen, never
   share a colour.
-- Anything with children is visibly bigger than a leaf, at any depth. Every leaf is the same
-  small size, wherever it sits.
+- Anything with children is visibly bigger than a leaf, at any depth. Every leaf below the
+  ring is the same small size, wherever it sits; every ring topic is group-sized, childless
+  ones included (§4, D-2).
 - The centre stays the single biggest thing on screen.
 - Depth stops being shown by colour or by size.
 - The key under the page header changes from listing five depth names to listing each ring
@@ -122,13 +124,14 @@ just because they're written down — confirm or cut each one.
    eight happens to be a close cousin of ProductDock's own blue; the other seven are not
    ProductDock colours at all. **This is a visible brand decision, not just an engineering
    one — see Areas of concern, C-1.**
-2. **A ring topic with nothing under it still gets its own colour and its own key entry, but
-   is still drawn at leaf size.** Colour and size follow two separate, independent rules
-   (colour = "is this a group," size = "does this carry anything"), and this is the one node
-   in today's tree where the two rules pull in different directions: it's treated as a group
-   for colour purposes (because every ring topic is) but as a leaf for size purposes (because
-   it has nothing under it). The result is a uniquely-coloured key entry pointing at the
-   smallest dot on the ring. **See Areas of concern, C-3.**
+2. **A ring topic with nothing under it gets its own colour, its own key entry, *and* the
+   larger "group" size.** *(Amended after review — see C-3. The original draft sized it as a
+   leaf.)* Colour and size are driven by the same question — "is this a group?" — where a
+   group is anything with children **or** any topic on the ring, filled in or not. The ring is
+   the frame a viewer takes their bearings from, so a ring topic shrinking to a rim-sized dot
+   because nobody has filled it in yet reads as a rendering mistake rather than as
+   information. The cost is that size no longer means *strictly* "has children": it means "is
+   a group," and on the ring those differ for exactly one node today (FR-7, FR-8).
 3. **The centre's colour is chosen to be the highest-contrast mark on screen**, rather than
    an arbitrary "neutral grey" — the same reasoning the very first version of this page used
    to make the centre read as the centre. It is not one of the eight group colours and is not
@@ -157,8 +160,11 @@ Each of these is something you can point at on screen; verification is §10.
   the on-screen key, whether or not it has anything under it.
 - **FR-6.** No two groups that are immediate neighbours — a node and its own parent, or two
   nodes that share the same parent — are ever drawn in the same colour.
-- **FR-7.** Every node with children is visibly bigger than every leaf, at any depth.
-- **FR-8.** Every leaf is drawn at exactly the same size, wherever it sits in the tree.
+- **FR-7.** Every node with children is visibly bigger than every childless node below the
+  ring, at any depth.
+- **FR-8.** Every leaf below the ring is drawn at exactly the same size, wherever it sits in
+  the tree. **Every topic on the ring is drawn at the larger "group" size, whether or not it
+  has children** (§4, D-2).
 - **FR-9.** The centre remains the single biggest thing on screen.
 - **FR-10.** Depth no longer changes what colour or size a node is drawn at.
 - **FR-11.** The key beneath the page header lists each ring topic's name next to its colour,
@@ -166,8 +172,8 @@ Each of these is something you can point at on screen; verification is §10.
 
 Checkable, in the intent's own words: pick any leaf on the rim and you can name the group it
 belongs to from its colour alone. Pick any two clearly different-sized circles and the bigger
-one always has something hanging off it. No two same-coloured groups are ever visible near
-each other.
+one is always a group — something with things under it, or a ring topic waiting to have them.
+No two same-coloured groups are ever visible near each other.
 
 ### 6. Risks
 
@@ -177,7 +183,7 @@ each other.
 | **The ring can only ever hold eight top-level topics before two must share a colour (§2.3, §4, D-5).** | Not a problem today, but it's a ceiling nobody has agreed to yet, and it will arrive without warning the day a ninth top-level topic is added. |
 | **Accessibility debt is explicitly not supposed to get worse, and the riskiest colours (the lightest, hardest-to-tell-apart ones) sit exactly at the rim** — the same place a colour-vision-deficient viewer, or the keyboard/screen-reader user from the already-open accessibility work, already struggles most. | The intent is explicit that this change must not make that debt worse. Part B's checks are designed to confirm that, but as of this spec they have not yet been run against this app's actual colours (§3, Q1; §10, V-8). |
 | **The two still-unnamed ring topics and the note-style leaf labels are untouched.** | Once colour makes the groups obvious at a glance, a viewer's very next question is "what is 'n Node'?" — the same problem the previous reshape flagged, one layer further exposed rather than solved. |
-| **The childless ring topic now looks doubly inconsistent** — its own colour and key entry, but leaf-sized (§4, D-2). | The previous spec already flagged this node as visibly lopsided; this spec adds a second, different kind of inconsistency on top of it rather than resolving either. |
+| **The childless ring topic is now drawn at full group size while carrying nothing** (§4, D-2, as amended). | The previous spec already flagged this node as visibly lopsided. Sizing it like its ring siblings keeps the ring reading as one frame, but it means a viewer cannot infer "has children" from size alone on the ring — only below it. The key entry and the colour make it findable; its emptiness is still only discoverable by clicking. |
 
 ---
 
@@ -191,7 +197,7 @@ rewrite of a small, already-isolated module, or a small edit to a file that alre
 
 | File | Change |
 | --- | --- |
-| `src/lib/graph/palette.ts` | The five-step depth ramp and `radiusForDepth` are removed. Radius becomes a three-way choice — hub, "has children," or leaf — as a function of a node's own shape rather than its depth (§8.4). `MAX_DEPTH` and the depth cap stay, with the docstring's rationale rewritten: the cap is now a readability/authoring limit on its own terms, not a side effect of a five-step colour ramp having five steps (per the intent's constraint). |
+| `src/lib/graph/palette.ts` | The five-step depth ramp and `radiusForDepth` are removed. Radius becomes a three-way choice — hub, group, or leaf — as a function of a node's own shape rather than its depth, where "group" is the same predicate §8.2 uses for colour: has children, or sits on the ring (§8.4). `MAX_DEPTH` and the depth cap stay, with the docstring's rationale rewritten: the cap is now a readability/authoring limit on its own terms, not a side effect of a five-step colour ramp having five steps (per the intent's constraint). |
 | `src/lib/graph/colour.ts` (new) | The colour-assignment algorithm (§8.2): a pure function from the flattened node list to a colour token per node. Framework-agnostic, like the rest of `lib/graph` — no `three`, no CSS, just token names as strings. |
 | `src/lib/graph/types.ts` | `GraphNode` gains `hasChildren: boolean` (already known during `flatten`'s walk — `children.length > 0` — and needed to tell a leaf from a branch, which `leafCount` alone can't do: a node with exactly one leaf child and a childless leaf both have a `leafCount` of 1). `GraphSceneNode` gains `colourToken: string`, the resolved CSS custom property name for that node's fill. |
 | `src/lib/graph/tree.ts` | The `walk` sets `hasChildren` on each node as it's built. The depth-cap error message's wording changes to match the new rationale in `palette.ts`; the check itself (`depth > MAX_DEPTH`) is unchanged. |
@@ -321,9 +327,12 @@ yet looked at).
 #### 8.4 Size: from five depth-scaled radii to three
 
 `radiusForDepth(depth)` is replaced by a function of a node's own shape rather than its
-position in the tree: the root gets the hub radius, any other node with children gets the one
-"has children" radius, and every leaf gets the one leaf radius — three constants total, in
-place of today's five-step, monotonically-decreasing array. The two call sites that read a
+position in the tree: the root gets the hub radius, any other **group** — a node with children,
+or any node on the ring (`depth === 1`), filled in or not — gets the one group radius, and
+every remaining leaf gets the one leaf radius — three constants total, in place of today's
+five-step, monotonically-decreasing array. That "is it a group" predicate is the same one
+§8.2 uses to decide whether a node gets its own hue, so colour and size are two readings of
+one rule rather than two rules that can disagree (§4, D-2). The two call sites that read a
 per-node radius (`scene.ts`'s node mapping, and `layout.ts`'s `sceneRadius`, which needs the
 outermost node's radius to size the camera's far plane) are unaffected in shape, only in what
 they call. Nothing about `layout.ts`'s geometry — shell distances, cone angles, the golden-
@@ -377,8 +386,8 @@ spec.md) continues to apply unchanged.
 | V-3 | A node with its own children never inherits a shade | Unit test on the day-one seed: `Vector db`'s hue differs from `RAG`'s, and `pgvector`/`Qdrant`/`S3 vector` take `Vector db`'s tint, not `RAG`'s | pass |
 | V-4 | No two tree-adjacent groups share a hue | Unit test, run against both the day-one seed and the wider synthetic seed already used in `layout.test.ts`: for every node with its own hue, that hue differs from its parent's hue (if any) and from every sibling's hue | pass |
 | V-5 | Deterministic and stable | Unit test: running assignment twice on the same seed gives identical results; adding a node to one branch of a copy of the seed does not change any other branch's already-assigned hues | pass |
-| V-6 | Has-children nodes are bigger than leaves, at every depth | Unit test on the day-one seed and the wider synthetic seed: every node with children has a strictly larger radius than every leaf, regardless of depth | pass |
-| V-7 | Every leaf is the same size | Unit test: every leaf node's radius is identical | pass |
+| V-6 | Group nodes are bigger than leaves, at every depth | Unit test on the day-one seed and the wider synthetic seed: every group (a node with children, or any ring topic) has a strictly larger radius than every leaf below the ring, regardless of depth | pass |
+| V-7 | Every leaf below the ring is the same size, and every ring topic is group-sized | Unit test: every childless node below the ring has an identical radius; every `depth === 1` node carries the group radius, childless ones included (§4, D-2) | pass |
 | V-8 | Accessibility checks pass against this app's own colours | `dataviz` validator run against the eight base hues (adjacent pairs), the eight leaf tints (adjacent pairs), and the hub colour, in both light (surface `#ffffff`) and dark (surface `#0a0c0e`) mode — the same command shape already used and recorded for the current ramp | no hard failure in either mode; any accepted warning is documented with the required secondary encoding (labels), not silently shipped |
 | V-9 | No regression against the recorded accessibility debt | Manual comparison: the least-visible new colour (against the page, in either mode) is at least as visible as the least-visible step of the ramp it replaces | pass, or flagged before merge |
 | V-10 | Manual, on the built page, both themes: pick any leaf on the rim and name its group from colour alone | Visual check | pass |
@@ -409,15 +418,15 @@ needed from you:** accept that a future ninth top-level topic will force two rin
 share a colour (breaking the "always tell them apart" promise this whole feature exists to
 deliver), or flag now that the colour set needs to be bigger before the tree grows that far.
 
-**C-3 — The one ring topic with nothing under it gets a colour and a key entry like every
-other topic, but is still drawn at the small, leaf size.** Colour answers "which group" and
-size answers "does it carry anything," and this is the one node in today's tree where those
-two questions have different answers. **Resolved here by keeping the two rules strictly
-independent, exactly as the intent describes them**, even though the result — a uniquely
-coloured key entry pointing at the smallest dot on the ring — reads as inconsistent (§4, D-2).
-**The decision needed from you:** accept that inconsistency as a fair reading of the intent's
-own rules, or ask for a one-off exception that sizes a childless ring topic like its ring
-siblings.
+**C-3 — RESOLVED. The one ring topic with nothing under it is drawn at group size, like its
+ring siblings.** The original draft sized it as a leaf, on the reasoning that colour answers
+"which group" and size answers "does it carry anything," and offered the product owner a
+one-off exception as the alternative. **The product owner took the exception** (2026-09-19,
+during planning for issue #31). Colour and size now both answer the same question — "is this a
+group?" — with a group being anything that has children or sits on the ring. The remaining
+cost is recorded in Risks (§6): on the ring, size no longer tells you whether a topic carries
+anything. This resolution is what §4 D-2, FR-7, FR-8, §8.4, V-6 and V-7 above now describe;
+the pre-amendment wording is in this file's git history.
 
 **C-4 — This change must not make the graph's already-recorded accessibility debt worse, and
 that has not been independently confirmed against this app's own colours yet.** The riskiest

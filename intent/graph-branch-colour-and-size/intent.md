@@ -42,18 +42,22 @@ Looking at the graph without clicking anything, you can see the groups.
   centre rather than as one more branch.
 - **A node with children is visibly bigger than a leaf**, wherever it sits in the tree.
   **Every leaf is the same small size** — the rim reads as uniform end points, nothing
-  hanging off them. The hub stays the biggest thing on screen. Depth on its own no
-  longer makes a circle bigger or smaller.
+  hanging off them — **except on the ring itself, where every topic is drawn at the
+  larger size whether or not anything hangs off it.** The ring is the frame you take
+  your bearings from, and one topic shrinking to a rim-sized dot because it is not
+  filled in yet reads as a mistake rather than as information. The hub stays the biggest
+  thing on screen. Depth on its own no longer makes a circle bigger or smaller.
 - **Depth is no longer encoded in the picture at all.** Distance from the hub already
-  says it. Colour means group, size means has-children, and that is the whole legend.
+  says it. Colour means group, size means is-this-a-group, and that is the whole
+  legend — on the ring and below it, the two now answer the same question.
 - **The key under the header lists the ring topics and their colours** — around six
   entries, a short strip — replacing the depth names (Root / Area / Topic / Subtopic /
   Detail), which will no longer describe anything.
 
 Checkable: pick any leaf on the rim and you can name the group it belongs to from its
 colour alone, without following an edge. Pick any two circles of clearly different
-size and the bigger one always has something hanging off it. No two same-coloured
-parents are visible near each other.
+size and the bigger one is always a group — something with things under it, or a ring
+topic waiting to have them. No two same-coloured parents are visible near each other.
 
 ## Affected users and systems
 
