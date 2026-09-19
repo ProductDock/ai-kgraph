@@ -11,6 +11,9 @@
 # one matrix job per intent, so every spec gets its own review thread and its own
 # 'Areas of concern' triage. Batching them into a single PR loses review signal.
 #
+# The spec PR is announced to Slack if SLACK_WEBHOOK_URL is set, because it waits on one
+# named person and nothing else in the pipeline tells them it exists.
+#
 # See docs/spec-from-intent-automation.md for the design and the manual fallback.
 
 name: spec-from-intent
@@ -171,6 +174,7 @@ jobs:
           sed -i -E 's/^(\s*-?\s*\*\*Status:\*\*).*/\1 approved/i' "$intent"
 
       - name: Open PR for product owner review
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
           SLUG: ${{ matrix.slug }}
@@ -207,8 +211,35 @@ jobs:
           policy owner *before* engineering picks this up.
           TAIL
 
-          gh pr create --title "spec: $SLUG" --body-file pr-body.md \
-            --label spec --label needs-po-review
+          url="$(gh pr create --title "spec: $SLUG" --body-file pr-body.md \
+            --label spec --label needs-po-review)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "$url"
           if grep -qviE '^(## Areas of concern|None\.?|\s*)$' concerns.md; then
             gh pr edit --add-label needs-policy-owner
+            echo "concerns=1" >> "$GITHUB_OUTPUT"
           fi
+
+      # A spec PR sits waiting on one named person, and nothing else in this pipeline
+      # tells them it exists. plan-ready already announces gate 2 clearing; this
+      # announces gate 2 opening, so the channel sees both ends of the review.
+      - name: Notify the team channel
+        if: steps.pr.outputs.url != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          URL: ${{ steps.pr.outputs.url }}
+          CONCERNS: ${{ steps.pr.outputs.concerns }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "::notice::SLACK_WEBHOOK_URL not set — skipping notification"
+            exit 0
+          fi
+          if [ -n "${CONCERNS:-}" ]; then
+            text="⚠ Spec ready for product owner review — concerns flagged: $URL"
+          else
+            text="Spec ready for product owner review: $URL"
+          fi
+          payload="$(jq -nc --arg t "$text" '{text:$t}')"
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            -d "$payload" "$SLACK_WEBHOOK_URL" >/dev/null
