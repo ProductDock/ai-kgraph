@@ -37,11 +37,14 @@ where tracing an edge back stops working.
 
 This spec replaces both rules with two new ones. **Colour now means "which group,"** not
 "how deep": every topic that has anything under it gets its own colour, and everything
-directly under it that itself carries nothing is drawn in one lighter version of that same
-colour — so a viewer can look at any dot on the rim and know which topic it belongs to
-without following a single edge. **Size now means "is this a group,"** not "how deep":
-anything with children is visibly bigger than a leaf, full stop, wherever in the tree it sits,
-every leaf below the ring is the same small size, and every topic on the ring is group-sized
+directly under it that itself carries nothing is drawn in **that same colour** — so a viewer
+can look at any dot on the rim and know which topic it belongs to without following a single
+edge. *(Amended after the V-8 validator run — see §8.1. The original draft gave leaves a
+lighter tint of the parent's hue; that is not constructible against this app's surfaces.)*
+
+**Size now means "is this a group,"** not "how deep": anything with children is visibly
+bigger than a leaf, full stop, wherever in the tree it sits, every leaf below the ring is
+the same small size, and every topic on the ring is group-sized
 whether or not it has been filled in yet (§4, D-2). Depth stops being shown at all — distance
 from the centre already says it, so colour and size are now free to say something else.
 
@@ -56,12 +59,11 @@ else about the page.
 
 - Every node that has at least one thing under it gets its own colour, distinct from its own
   parent's colour and from every one of its siblings that also has its own colour.
-- Everything directly under such a node that itself carries nothing is drawn in one single,
-  lighter version of that node's colour — the same shade for every one of that node's
-  "nothing-under-it" children.
-- A node that has children of its own always gets a new colour of its own, never a shade of
-  the colour above it — colour only ever shades downward as far as the nearest node that
-  itself carries something.
+- Everything directly under such a node that itself carries nothing is drawn in that node's
+  own colour — colour says which group you are in, and nothing else (§8.1, as amended).
+- A node that has children of its own always gets a new colour of its own, never the colour
+  above it — colour only ever carries downward as far as the nearest node that itself carries
+  something.
 - The centre of the graph keeps one colour, used nowhere else in the picture.
 - Every topic on the ring around the centre — whether or not anything is under it — gets its
   own colour and a place in the on-screen key.
@@ -91,11 +93,14 @@ Restated from the intent, so nothing below is quietly folded into this piece of 
 
 #### 2.3 Deferred
 
-- **Growing past eight top-level topics.** The colour scheme this spec uses has eight
-  distinct colours, and every topic on the ring needs a colour different from every other
-  ring topic, because they're always visible together. Today there are four; the key's design
-  comfortably fits "around six," per the intent. What happens at topic number nine is a real
-  future question, not answered here (§4, D-5; Areas of concern, C-2).
+- **Growing past four top-level topics.** *(Amended after the V-8 run — the original draft
+  said eight.)* Every topic on the ring needs a colour different from every other ring topic,
+  because they are always visible together and listed together in the key. Measured against
+  this app's own surfaces, the number of these hues that survive that all-at-once test is
+  **four** — three with full headroom, a fourth inside the validator's warn band, which the
+  key's own names make legal. Today there are exactly four. What happens at topic number five
+  is a real future question, not answered here, and it arrives four topics sooner than this
+  spec originally assumed (§4, D-5; Areas of concern, C-2).
 - **A colour-independent way to tell groups apart**, for anyone who can't rely on colour at
   all. That belongs to the already-open keyboard/screen-reader work, not this spec (§4, D-4).
 - **Filling the ring topic that currently has nothing under it** stays a content decision for
@@ -107,7 +112,7 @@ The intent left two questions open. Both are answered here.
 
 | # | Open question | Decision |
 | --- | --- | --- |
-| Q1 | Do reused colours plus a neutral centre still pass contrast and colour-vision-deficiency checks in both light and dark mode, and does that force the colour count down? | **Answered provisionally: no, the colour count should not need to come down.** The eight colours picked (§8.1) already pass the same accessibility checks the current ramp was validated against, by a comfortable margin, on background colours very close to this app's own. The exact numbers **for this app's own background colours** are re-checked in the build stage before this ships (§10, V-8), the same way the current ramp's numbers were checked when it was built — this is a "measure it once it exists" confirmation, not a design change expected to follow. |
+| Q1 | Do reused colours plus a neutral centre still pass contrast and colour-vision-deficiency checks in both light and dark mode, and does that force the colour count down? | **Answered by measurement, and yes — it forced two changes.** The V-8 run against this app's own surfaces (`#ffffff` / `#0a0c0e`) was carried out during planning for issue #31, before any code. It found (a) the documented hue *order* fails on the ring, fixed by re-ordering the same eight values (§8.1); (b) the number of hues that can be told apart when all are on screen at once is **four**, not eight (§2.3, C-2); and (c) the leaf tint is **not constructible** — the eight hues already span the validated lightness band, so a "lighter step of the same hue" is a no-op for yellow, violet and red, and forcing one collapses the tints into each other (§8.1). The tint was therefore dropped: leaves carry their group's own colour. The measured numbers are in §8.1. |
 | Q2 | Does "never two same-coloured groups visible near each other" mean near in the tree, near on screen, or both? | **Answered: near in the tree is enough, and it already guarantees near on screen too.** Two groups are treated as "near" exactly when one is the other's immediate parent, or they share the same immediate parent (are siblings). The graph's existing shape rule — a branch's entire subtree always stays inside its own slice of the picture and can never spread into a neighbouring branch's slice, already checked automatically today — is what makes that tree-level rule also true on screen: two branches that aren't near each other in the tree physically cannot end up near each other on screen either. No separate on-screen check is needed on top of it (§8.3). |
 
 ### 4. Decisions added beyond the intent
@@ -149,11 +154,11 @@ just because they're written down — confirm or cut each one.
 Each of these is something you can point at on screen; verification is §10.
 
 - **FR-1.** Every node that has at least one thing under it is drawn in its own colour.
-- **FR-2.** Every node that carries nothing itself is drawn in one single, lighter version of
-  its immediate parent's colour, the same shade as every other "nothing under it" child of
-  that same parent.
-- **FR-3.** A node that has its own children never inherits a shade of an ancestor's colour —
-  it always gets a new colour of its own, no matter how deep it sits.
+- **FR-2.** Every node that carries nothing itself is drawn in its immediate parent's colour,
+  the same colour as every other "nothing under it" child of that same parent. *(Amended: the
+  original draft said "one single, lighter version of" that colour — see §8.1.)*
+- **FR-3.** A node that has its own children never inherits an ancestor's colour — it always
+  gets a new colour of its own, no matter how deep it sits.
 - **FR-4.** The centre of the graph is always drawn in the same one colour, and that colour
   never appears anywhere else in the picture.
 - **FR-5.** Every topic on the ring around the centre has its own colour and its own entry in
@@ -180,7 +185,8 @@ No two same-coloured groups are ever visible near each other.
 | Risk | Why it matters |
 | --- | --- |
 | **The eight colours carry no ProductDock brand approval (§4, D-1).** | This is the most visually prominent colour decision made on this page so far — six of eight colours on screen would be colours nobody at ProductDock chose. If that's not acceptable, this spec's whole colour approach needs to change, not just its palette. |
-| **The ring can only ever hold eight top-level topics before two must share a colour (§2.3, §4, D-5).** | Not a problem today, but it's a ceiling nobody has agreed to yet, and it will arrive without warning the day a ninth top-level topic is added. |
+| **The ring can only ever hold four top-level topics before two must share a colour (§2.3, §4, D-5, as amended).** | The day-one seed has exactly four. The ceiling is reached, not approaching: the next top-level topic added breaks the "always tell them apart" promise this feature exists to deliver, and nothing in the build will fail to warn about it. |
+| **The fourth ring colour sits in the validator's 6–8 warn band** (CVD ΔE 6.9, dark), legal only because the key names each topic. | The key is therefore load-bearing for accessibility, not decoration. Removing it, or letting a ring topic go unlabelled, silently breaks the check this spec passed. |
 | **Accessibility debt is explicitly not supposed to get worse, and the riskiest colours (the lightest, hardest-to-tell-apart ones) sit exactly at the rim** — the same place a colour-vision-deficient viewer, or the keyboard/screen-reader user from the already-open accessibility work, already struggles most. | The intent is explicit that this change must not make that debt worse. Part B's checks are designed to confirm that, but as of this spec they have not yet been run against this app's actual colours (§3, Q1; §10, V-8). |
 | **The two still-unnamed ring topics and the note-style leaf labels are untouched.** | Once colour makes the groups obvious at a glance, a viewer's very next question is "what is 'n Node'?" — the same problem the previous reshape flagged, one layer further exposed rather than solved. |
 | **The childless ring topic is now drawn at full group size while carrying nothing** (§4, D-2, as amended). | The previous spec already flagged this node as visibly lopsided. Sizing it like its ring siblings keeps the ring reading as one frame, but it means a viewer cannot infer "has children" from size alone on the ring — only below it. The key entry and the colour make it findable; its emptiness is still only discoverable by clicking. |
@@ -202,10 +208,10 @@ rewrite of a small, already-isolated module, or a small edit to a file that alre
 | `src/lib/graph/types.ts` | `GraphNode` gains `hasChildren: boolean` (already known during `flatten`'s walk — `children.length > 0` — and needed to tell a leaf from a branch, which `leafCount` alone can't do: a node with exactly one leaf child and a childless leaf both have a `leafCount` of 1). `GraphSceneNode` gains `colourToken: string`, the resolved CSS custom property name for that node's fill. |
 | `src/lib/graph/tree.ts` | The `walk` sets `hasChildren` on each node as it's built. The depth-cap error message's wording changes to match the new rationale in `palette.ts`; the check itself (`depth > MAX_DEPTH`) is unchanged. |
 | `src/lib/graph/scene.ts` | `buildScene` calls the new colour assignment alongside `layout`, and reads each node's radius from the new three-way function instead of `radiusForDepth(node.depth)`. |
-| `src/app/graph/_components/graph-scene.tsx` | `SCENE_TOKENS` becomes a fixed list (hub + 8 branch + 8 leaf-tint tokens, plus the existing edge/page tokens) instead of one built from `MAX_DEPTH`. `applyTokens` reads `node.colourToken` directly off each node instead of computing `depthToken(node.depth)` — simpler than what it replaces, since the token name is now decided once, at build time, rather than re-derived per frame. |
+| `src/app/graph/_components/graph-scene.tsx` | `SCENE_TOKENS` becomes a fixed list (hub + 8 branch tokens, plus the existing edge/page tokens) instead of one built from `MAX_DEPTH`. `applyTokens` reads `node.colourToken` directly off each node instead of computing `depthToken(node.depth)` — simpler than what it replaces, since the token name is now decided once, at build time, rather than re-derived per frame. |
 | `src/app/graph/_components/depth-key.tsx` → `branch-key.tsx` | Renamed and rewritten. Today's `DepthKey` needs no props — it reads a fixed, depth-only array straight from `palette.ts`. The new key's content depends on the actual seed (which ring topics exist and which colour each one was assigned), so it becomes a small presentational component that takes the ring-topic nodes as a prop instead of importing a static list. |
 | `src/app/graph/page.tsx` | Passes the ring-topic subset of `scene.nodes` (`depth === 1`) to the renamed key component, in place of today's prop-less `<DepthKey />`. |
-| `src/app/globals.css` | The `--graph-depth-0…4` tokens are replaced by `--graph-hub`, `--graph-branch-0…7`, and `--graph-branch-0…7-leaf` (§8.1), declared in all three existing scopes exactly as the depth ramp was. `--graph-edge` and `--graph-label-halo` are unchanged. |
+| `src/app/globals.css` | The `--graph-depth-0…4` tokens are replaced by `--graph-hub` and `--graph-branch-0…7` (§8.1), declared in all three existing scopes exactly as the depth ramp was. There are no `-leaf` tokens — see §8.1. `--graph-edge` and `--graph-label-halo` are unchanged. |
 | `src/lib/graph/layout.test.ts`, `tree.test.ts` | **Amended in.** Tests asserting depth-scaled radii or reading `radiusForDepth` move to the new three-way radius rule; a new `colour.test.ts` covers the assignment algorithm (§10). |
 | `CLAUDE.md` | The `## Graph data` section's colour/size bullets are rewritten to describe group colour and has-children size in place of the depth ramp and depth-scaled radii; the depth-cap bullet's rationale is updated to match. |
 
@@ -227,43 +233,78 @@ needs is `dataviz`'s **categorical** pattern instead — a fixed set of hues, as
 identity, never by rank.
 
 **The eight hues are the `dataviz` skill's own documented default categorical palette**, used
-as-is rather than derived from ProductDock's brand:
+as-is rather than derived from ProductDock's brand — but **re-ordered**, because the
+documented order does not survive this graph's pairlist:
 
 | Slot | Hue | Light | Dark |
 | --- | --- | --- | --- |
 | 0 | blue | `#2a78d6` | `#3987e5` |
-| 1 | orange | `#eb6834` | `#d95926` |
-| 2 | aqua | `#1baf7a` | `#199e70` |
+| 1 | green | `#008300` | `#008300` |
+| 2 | magenta | `#e87ba4` | `#d55181` |
 | 3 | yellow | `#eda100` | `#c98500` |
-| 4 | magenta | `#e87ba4` | `#d55181` |
-| 5 | green | `#008300` | `#008300` |
+| 4 | aqua | `#1baf7a` | `#199e70` |
+| 5 | orange | `#eb6834` | `#d95926` |
 | 6 | violet | `#4a3aa7` | `#9085e9` |
 | 7 | red | `#e34948` | `#e66767` |
 
-This ordering already clears every computable check the skill defines — lightness band,
-saturation floor, colour-vision-deficiency separation, and a "tell them apart with full colour
-vision too" floor — against background colours close to this app's own (`#fcfcfb`/`#1a1a19`
-in the documented instance, versus this app's own `#ffffff`/`#0a0c0e`). **Re-running that
-same check against this app's exact background colours, in both modes, is a required
-pre-merge gate (V-8)** — the same gate the original ramp went through when it was built (see
-`ai-knowledge-graph-3d`'s spec §7.4) — not assumed to still pass just because the generic
-instance did. `design-system`'s own two brand accents (blue, orange) are not a substitute:
-two hues cannot do an eight-hue identity job, which is exactly why this spec reaches outside
-the brand palette at all (§4, D-1; Areas of concern, C-1).
+*(Amended after the V-8 run. The values are the skill's own, unchanged; only the slot order
+is this spec's. Re-ordering is the mechanism the skill itself prescribes — "the slot ordering
+is the CVD-safety mechanism, not cosmetic" — so this is using the palette as documented, not
+departing from it.)*
 
-**The leaf tint** is one lighter step of the same hue, not a colour of its own: each of the
-eight hues gets one paired "leaf" token (`--graph-branch-N-leaf`), produced by holding that
-hue's colour family constant and raising it to the lighter end of the same accessibility band
-the base hue sits in — the same relationship the current ramp's own steps already have to
-each other, just narrowed to two steps (a group's own colour, and its one shared "nothing
-under it" shade) instead of five. Because a shared lightening rule doesn't guarantee the
-*result* stays as easy to tell apart as the base hues do, **the eight leaf tints are validated
-as their own categorical set, separately from the eight base hues** (V-8) — this is a case the
-`dataviz` skill doesn't name directly (its categorical check assumes one flat set of colours
-doing an identity job, not a base set and a second, derived set that has to remain legible
-both against the page and against its own base colour), so this spec applies the skill's
-existing computable checks to a case one level removed from what it documents, rather than
-inventing a new check.
+**Why the order had to change.** A chart reads its palette *adjacently* — series 1 beside
+series 2. This graph does not: the ring is a circle of topics all on screen at once, listed
+together in the key, so **every ring topic must separate from every other**, which is the
+skill's `--pairs all` case. Measured against this app's own surfaces (`#ffffff` light,
+`#0a0c0e` dark):
+
+| Check | Documented order | This spec's order |
+| --- | --- | --- |
+| All 8, adjacent pairs, both modes | PASS | PASS (worst CVD ΔE 9.1 light / 8.4 dark; normal-vision 19.6 / 19.3) |
+| First 3, all pairs, both modes | PASS | PASS (worst CVD ΔE 13.0; normal-vision 26.5) |
+| **First 4, all pairs, both modes** | **FAIL** — yellow↔orange normal-vision ΔE 10.6 dark, against a hard floor of 15 | **PASS** (worst CVD ΔE 6.9 dark — the 6–8 band, legal with the key's names as secondary encoding; normal-vision 19.3) |
+
+The day-one seed has exactly four ring topics, so the ring ships inside the limit — with no
+headroom. That limit, not eight, is the real ceiling (§2.3; C-2).
+
+`design-system`'s own two brand accents (blue, orange) are not a substitute: two hues cannot
+do this job, which is exactly why this spec reaches outside the brand palette at all (§4,
+D-1; Areas of concern, C-1).
+
+**The three light-mode hues below 3:1 against the page** (magenta 2.69, yellow 2.17, aqua
+2.82) carry the validator's documented relief obligation — visible labels — which the scene's
+existing label layer and the header key together provide. That obligation is not dismissable
+and is the reason neither can be dropped later without re-opening this check.
+
+**There is no leaf tint.** A leaf is drawn in its group's own colour, unchanged. *(Amended
+after the V-8 run. The original draft gave each hue a paired lighter token,
+`--graph-branch-N-leaf`; those tokens do not exist.)*
+
+The original rule was "one lighter step of the same hue, inside the same accessibility band
+the base hue sits in." Measured, that band is **L 0.43–0.77 in light mode and only L
+0.48–0.67 in dark**, and the eight base hues already span it. The headroom left above each
+base hue:
+
+| Hue | Light, to band top | Dark, to band top |
+| --- | --- | --- |
+| yellow | **0.006** | **0.000** |
+| violet | 0.337 | **0.000** |
+| red | 0.147 | **0.001** |
+| magenta | 0.054 | 0.048 |
+
+For yellow, violet and red there is nothing to step into: the "lighter" tint comes back
+**identical to its base**. Stepping the other way, or further, instead collapses the tints
+into each other — the derived yellow and green tints measure a CVD ΔE of **0.8** in dark mode
+and 3.6 in light, both hard failures. Every step size and direction tried bottomed out. The
+two-tone scheme is not constructible for eight hues against these surfaces, and no choice of
+values fixes it, because the constraint is the width of the band itself.
+
+Dropping it costs nothing the intent asked for. The intent's own checkable outcome — *"pick
+any leaf on the rim and you can name the group it belongs to from its colour alone"* — is
+satisfied **more** directly by a leaf carrying its group's exact colour than by a shade of it.
+What the tint was carrying on top of that, "this one has nothing under it," is exactly what
+size now says (FR-7, FR-8), so the information is not lost, only moved to the channel that
+can hold it. Eight tokens and a derivation rule disappear with it.
 
 **The hub's colour** is not one of the eight, and is not a generic "neutral grey" either — it
 reuses the exact principle the original ramp used to make the centre read as the centre: it's
@@ -289,8 +330,8 @@ same order `flatten` already produces):
    already used by an earlier sibling under the same parent. (Ring topics are all siblings of
    each other under the root, so this same one rule is what also keeps every ring topic
    mutually distinct — no separate ring-specific rule is needed.)
-3. Every other node — one that has no children and whose parent is not the root — takes the
-   **leaf-tint token that pairs with its immediate parent's hue.**
+3. Every other node — one that has no children and whose parent is not the root — takes
+   **its immediate parent's hue token, unchanged.**
 
 This is deterministic and order-stable: the same seed always produces the same assignment,
 with no randomness and no dependency on how many nodes exist elsewhere in the tree — adding a
@@ -302,12 +343,13 @@ eight hues by tree position).
 
 Worked example, from the current seed: `Evals` and `RAG` are siblings under `n Node`, so they
 get two different hues, and so does `n Node` itself, distinct from both. `Ragas` and
-`DeepEval`, `Evals`'s two "nothing under it" children, both take `Evals`'s leaf tint. `RAG`'s
-one child, `Vector db`, itself has children (`pgvector`, `Qdrant`, `S3 vector`) — so it gets
-its **own** hue rather than a shade of `RAG`'s, and those three leaves take *its* tint, not
-`RAG`'s (FR-3). Under `Protocols`, `MCP` (which has children) gets its own hue distinct from
-`Protocols`'s; `A2A` (which has none) takes `Protocols`'s own leaf tint directly, because its
-nearest node-with-children is `Protocols` itself.
+`DeepEval`, `Evals`'s two "nothing under it" children, both take `Evals`'s own hue — they are
+told apart from `Evals` by being smaller, not by being paler. `RAG`'s one child, `Vector db`,
+itself has children (`pgvector`, `Qdrant`, `S3 vector`) — so it gets its **own** hue rather
+than `RAG`'s, and those three leaves carry *its* hue, not `RAG`'s (FR-3). Under `Protocols`,
+`MCP` (which has children) gets its own hue distinct from `Protocols`'s; `A2A` (which has
+none) takes `Protocols`'s hue directly, because its nearest node-with-children is `Protocols`
+itself.
 
 #### 8.3 Why tree-adjacency is enough to guarantee screen-adjacency
 
@@ -381,14 +423,14 @@ spec.md) continues to apply unchanged.
 
 | # | Check | How | Pass |
 | --- | --- | --- | --- |
-| V-1 | Every node-with-children gets its own colour | Unit test on the colour-assignment function: every node where `hasChildren` is true (or whose parent is the root) is assigned a hue token, never a leaf-tint token | pass |
-| V-2 | Every leaf takes its parent's tint | Unit test: every node where `hasChildren` is false and whose parent is not the root is assigned the leaf-tint token that pairs with its immediate parent's hue token | pass |
-| V-3 | A node with its own children never inherits a shade | Unit test on the day-one seed: `Vector db`'s hue differs from `RAG`'s, and `pgvector`/`Qdrant`/`S3 vector` take `Vector db`'s tint, not `RAG`'s | pass |
+| V-1 | Every group gets its own colour | Unit test on the colour-assignment function: every node where `hasChildren` is true, or whose parent is the root, is assigned a hue token distinct from its parent's and its siblings' | pass |
+| V-2 | Every leaf takes its parent's colour | Unit test: every node where `hasChildren` is false and whose parent is not the root is assigned its immediate parent's hue token, unchanged | pass |
+| V-3 | A node with its own children never inherits its parent's colour | Unit test on the day-one seed: `Vector db`'s hue differs from `RAG`'s, and `pgvector`/`Qdrant`/`S3 vector` carry `Vector db`'s hue, not `RAG`'s | pass |
 | V-4 | No two tree-adjacent groups share a hue | Unit test, run against both the day-one seed and the wider synthetic seed already used in `layout.test.ts`: for every node with its own hue, that hue differs from its parent's hue (if any) and from every sibling's hue | pass |
 | V-5 | Deterministic and stable | Unit test: running assignment twice on the same seed gives identical results; adding a node to one branch of a copy of the seed does not change any other branch's already-assigned hues | pass |
 | V-6 | Group nodes are bigger than leaves, at every depth | Unit test on the day-one seed and the wider synthetic seed: every group (a node with children, or any ring topic) has a strictly larger radius than every leaf below the ring, regardless of depth | pass |
 | V-7 | Every leaf below the ring is the same size, and every ring topic is group-sized | Unit test: every childless node below the ring has an identical radius; every `depth === 1` node carries the group radius, childless ones included (§4, D-2) | pass |
-| V-8 | Accessibility checks pass against this app's own colours | `dataviz` validator run against the eight base hues (adjacent pairs), the eight leaf tints (adjacent pairs), and the hub colour, in both light (surface `#ffffff`) and dark (surface `#0a0c0e`) mode — the same command shape already used and recorded for the current ramp | no hard failure in either mode; any accepted warning is documented with the required secondary encoding (labels), not silently shipped |
+| V-8 | Accessibility checks pass against this app's own colours | **Already run, during planning for issue #31, before any code** — `dataviz` `validate_palette.js` against the eight hues in this spec's order (adjacent pairs) *and* against the four ring hues (`--pairs all`), in both light (surface `#ffffff`) and dark (surface `#0a0c0e`) mode. Results and the changes they forced are recorded in §8.1. Re-run it unchanged if any value or the slot order is edited. | no hard failure in either mode — met; the one warn-band pair (CVD ΔE 6.9, dark) is documented with its required secondary encoding (the key's names), not silently shipped |
 | V-9 | No regression against the recorded accessibility debt | Manual comparison: the least-visible new colour (against the page, in either mode) is at least as visible as the least-visible step of the ramp it replaces | pass, or flagged before merge |
 | V-10 | Manual, on the built page, both themes: pick any leaf on the rim and name its group from colour alone | Visual check | pass |
 | V-11 | Manual, on the built page, both themes: pick any two differently-sized circles; confirm the bigger one always has children | Visual check | pass |
@@ -408,15 +450,25 @@ are not ProductDock colours at all, and they'll be the most visually prominent t
 page. **The decision needed from you:** is shipping a non-brand colour set on the flagship
 graph page acceptable, or does this need a design/brand review before it ships?
 
-**C-2 — The ring can only ever hold eight top-level topics before two are forced to share a
-colour.** Every ring topic needs a colour distinct from every other ring topic, because
-they're always visible together, and there are only eight colours in the set this spec uses.
-Today there are four topics, comfortably inside that limit, and the key's own design already
-anticipates growing to "around six" — still inside it. **Resolved here by shipping the
-eight-colour set and not solving for a ninth topic now** (§2.3, §4, D-5). **The decision
-needed from you:** accept that a future ninth top-level topic will force two ring topics to
-share a colour (breaking the "always tell them apart" promise this whole feature exists to
-deliver), or flag now that the colour set needs to be bigger before the tree grows that far.
+**C-2 — AMENDED, and worse than first stated. The ring can hold four top-level topics, not
+eight.** The original draft reasoned that eight colours means eight ring topics. That counted
+the colours, not the check. Because ring topics are all on screen at once and listed together
+in the key, they must clear the validator's **all-pairs** test, not the adjacent-pairs test a
+chart uses — and measured against this app's own surfaces, only **three** of these hues clear
+it outright, with a fourth legal inside the 6–8 warn band because the key names each topic
+(§8.1).
+
+The day-one seed has exactly four ring topics. **The ceiling is not approaching; it has been
+reached.** The fifth top-level topic added to `seed.ts` will force two ring topics to share a
+colour, breaking the "always tell them apart" promise this feature exists to deliver — and
+nothing in the build will stop it or warn about it, because the colour assignment cycles
+silently.
+
+**Resolved here by shipping the four that fit and not solving for a fifth now** (§2.3, §4,
+D-5). **The decision needed from you:** accept a ceiling of four with no headroom and no
+build-time guard, or treat "what happens at ring topic five" as work that must land before
+the tree grows. Note the intent itself anticipated "around six" ring topics, so this is a
+real constraint on content, not a theoretical one.
 
 **C-3 — RESOLVED. The one ring topic with nothing under it is drawn at group size, like its
 ring siblings.** The original draft sized it as a leaf, on the reasoning that colour answers
@@ -428,22 +480,29 @@ cost is recorded in Risks (§6): on the ring, size no longer tells you whether a
 anything. This resolution is what §4 D-2, FR-7, FR-8, §8.4, V-6 and V-7 above now describe;
 the pre-amendment wording is in this file's git history.
 
-**C-4 — This change must not make the graph's already-recorded accessibility debt worse, and
-that has not been independently confirmed against this app's own colours yet.** The riskiest
-colours in this design — the eight leaf tints — sit at the rim, exactly where a colour-vision-
-deficient viewer or a keyboard/screen-reader user (the subject of the separate, still-open
-accessibility work) already struggles most. This spec requires the same computable checks the
-current ramp passed to be re-run against this app's own colours before merge (§10, V-8, V-9),
-the same gate the current ramp went through when it was built — but as of this document, that
-run hasn't happened yet. **No decision needed from you today** — this is flagged so the gate
-isn't quietly skipped between now and merge.
+**C-4 — RESOLVED. The gate was run, before any code, and it changed the design twice.** The
+concern was that the computable checks had not yet been run against this app's own colours and
+might be quietly skipped. They were run during planning for issue #31 (§8.1, V-8) and they
+found two real defects: the documented hue order fails on the ring, and the leaf tint is not
+constructible inside the validated lightness band at all. Both are fixed in this document
+rather than discovered at review.
 
-**C-5 — Several of this spec's numbers — the exact leaf-tint values, and whether all eight
-hues survive validation against this app's own colours — are chosen the same "build it, look
-at it, then confirm" way the rest of this graph's tuned values have been, not proven on paper
-here.** This mirrors the previous graph spec's own admitted pattern (its Areas of concern,
-C-5): a testable rule is specified now (§8.1, §8.2, §10), but the literal colour values behind
-it are expected to move once someone has actually run the check and looked at the result.
-**The decision needed from you:** treat this spec's colour values as a first attempt due for a
-"build it, look at it" pass, not a final palette, the same way the ring layout's tuning
-constants were treated.
+The riskiest colours are no longer "the eight leaf tints" — there are none. What remains is
+one warn-band pair on the ring (CVD ΔE 6.9, dark) and three light-mode hues below 3:1 against
+the page, both carrying the validator's documented relief obligation: **visible labels**. The
+scene's label layer and the header key supply it, which makes both load-bearing for
+accessibility rather than decorative (§6). **No decision needed from you** — recorded so the
+obligation is not dropped later by someone tidying up the key.
+
+**C-5 — RESOLVED for colour; still open for the three radii.** The concern was that this
+spec's colour numbers were a "build it, look at it, then confirm" first attempt rather than
+proven. For colour that is now settled the other way: the values, their slot order and the
+count that fits the ring were all measured before any code was written, and the measurements
+are in §8.1. They are not awaiting a look-at-it pass.
+
+What is still tuned by eye is **size**: the three radii (hub, group, leaf) are judged on
+screen, exactly as the previous graph spec's layout constants were. The layout's existing
+minimum-separation test bounds them — measured during planning, any pair involving a group
+sits at least 5.98 apart in the 148-node synthetic seed, so the group radius has room up to
+about 2.39 before that test fails. **The decision needed from you:** treat the three radii,
+not the palette, as the values due for a "build it, look at it" pass.

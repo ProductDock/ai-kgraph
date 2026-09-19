@@ -28,16 +28,22 @@ bigger circles"*.
 Looking at the graph without clicking anything, you can see the groups.
 
 - **Every node that has children carries its own colour**, at any depth. Its leaves —
-  the children that carry nothing themselves — are drawn in **one single lighter shade
-  of that colour**, the same shade for all of them, so they read as belonging to it. A
-  child that has children of its own takes a colour of its own instead of inheriting
-  its parent's. So `Evals` has its own colour and `Ragas` and `DeepEval` are the one
-  lighter shade of it, while `Vector db`, a sibling of `Evals`, carries a different
-  colour again.
-- **Colour is a local grouping cue, not a unique id.** There are roughly eight distinct
-  hues and more parents than that, so hues repeat — but never between two parents that
-  are near each other, in the tree or on screen. You should never be able to see two
-  same-coloured parents at once and wonder whether they are related.
+  the children that carry nothing themselves — are drawn in **that same colour**, so
+  they read as belonging to it; they are told apart from it by being smaller, not by
+  being paler. A child that has children of its own takes a colour of its own instead
+  of inheriting its parent's. So `Evals` has its own colour, `Ragas` and `DeepEval`
+  carry it too, and `Vector db`, a sibling of `Evals`, carries a different colour
+  again. *(Amended 2026-09-19: originally "one single lighter shade of that colour."
+  The `dataviz` validation run found no room in the accessibility band to build those
+  shades — see the spec's §8.1. Size already carries "has nothing under it", so the
+  shade was carrying nothing the picture had lost.)*
+- **Colour is a local grouping cue, not a unique id.** There are eight distinct hues and
+  more parents than that, so hues repeat — but never between two parents that are near
+  each other, in the tree or on screen. You should never be able to see two
+  same-coloured parents at once and wonder whether they are related. **On the ring,
+  where every topic is visible at once, the limit is tighter: four.** That is a
+  constraint on how many top-level topics the tree can hold, and today it holds exactly
+  four (spec C-2).
 - **The hub stays neutral and apart**, outside the palette, so the centre reads as the
   centre rather than as one more branch.
 - **A node with children is visibly bigger than a leaf**, wherever it sits in the tree.
@@ -86,10 +92,14 @@ topic waiting to have them. No two same-coloured parents are visible near each o
 
 ## Open questions
 
-- [ ] Colour and size no longer back each other up. Today depth is carried by both, so
+- [x] Colour and size no longer back each other up. Today depth is carried by both, so
       colour is never the only cue; after this, group is carried by colour alone.
       Whether reused hues plus a neutral hub clear contrast and colour-vision-deficiency
       checks in both modes is for `dataviz` validation to answer, and it may force the
       hue count down. — *owner: design stage*
-- [ ] "Never adjacent" needs a definition the spec can assert — adjacent in the tree,
+      **Answered: it did.** The run forced a re-ordering of the hues, cut the ring's
+      usable count from eight to four, and removed the leaf shade entirely. Spec §8.1.
+- [x] "Never adjacent" needs a definition the spec can assert — adjacent in the tree,
       adjacent on screen after layout, or both. — *owner: design stage*
+      **Answered: adjacent in the tree**, which the layout's containment rule already
+      makes true on screen as well. Spec §3 Q2 and §8.3.
