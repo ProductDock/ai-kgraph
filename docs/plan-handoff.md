@@ -37,6 +37,7 @@ budget before it exists.
         ├─ first approval → opens issue "plan: <title>", labels plan + ready-to-plan
         ├─ re-approval    → comments the spec diff on that issue, labels spec-revised,
         │                   reopens it if it had been closed  (no duplicate task)
+        ├─ …unless plan.md moved in the same push → comments only, no reopen
         ├─ carries over any concerns flagged in the spec
         ├─ assigns ${{ vars.PLAN_ASSIGNEE }} if set
         └─ posts to Slack if SLACK_WEBHOOK_URL is set
@@ -68,6 +69,21 @@ change:
 - **no existing task** → open one, as on first approval
 - **task exists** → comment on it with the spec diff, label it `spec-revised`, and reopen
   it if it had already been closed
+- **task exists and `plan.md` moved in the same push** → comment only
+
+That last case is the implementation PR landing. It amends the spec and closes the plan
+task in one merge, so a push event alone cannot tell it apart from a product owner
+re-approving an amended spec — both are a modified `spec.md` arriving next to a closed
+task. `plan.md` moving with it is the tell, and it has to be checked, because GitHub
+processes the PR's `Closes #n` a few seconds *before* this job reads the issue state: the
+job would otherwise see `CLOSED`, conclude the spec was amended after the task closed, and
+reopen the task the merge had just closed. (Observed on #25: closed 10:35:08, reopened by
+this workflow 10:35:14.) `spec-revised` is skipped there too — it means "go re-read the
+spec before planning further", and on an implementation push there is nothing left to
+plan.
+
+The `workflow_dispatch` path has no base commit to diff against, so it cannot make this
+call and keeps the reopen.
 
 The engineer's half is not automated, deliberately — noticing that a spec is wrong is
 the judgement being paid for. The skill tells them to comment what is missing, label the
