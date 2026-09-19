@@ -27,32 +27,43 @@ bigger circles"*.
 
 Looking at the graph without clicking anything, you can see the groups.
 
-- **Every node that has children gets its own distinct colour**, at any depth. Its
-  leaves — the children that carry nothing themselves — are drawn in that same colour,
-  slightly varied, so they read as belonging to it. A child that has children of its
-  own takes a distinct colour instead of inheriting its parent's. So `Evals` is its own
-  colour and `Ragas` and `DeepEval` are shades of `Evals`, while `Vector db`, a sibling
-  of `Evals`, is a different colour again.
+- **Every node that has children carries its own colour**, at any depth. Its leaves —
+  the children that carry nothing themselves — are drawn in **one single lighter shade
+  of that colour**, the same shade for all of them, so they read as belonging to it. A
+  child that has children of its own takes a colour of its own instead of inheriting
+  its parent's. So `Evals` has its own colour and `Ragas` and `DeepEval` are the one
+  lighter shade of it, while `Vector db`, a sibling of `Evals`, carries a different
+  colour again.
+- **Colour is a local grouping cue, not a unique id.** There are roughly eight distinct
+  hues and more parents than that, so hues repeat — but never between two parents that
+  are near each other, in the tree or on screen. You should never be able to see two
+  same-coloured parents at once and wonder whether they are related.
+- **The hub stays neutral and apart**, outside the palette, so the centre reads as the
+  centre rather than as one more branch.
 - **A node with children is visibly bigger than a leaf**, wherever it sits in the tree.
-  Leaves are all one small size. The hub stays the biggest thing on screen. Depth on
-  its own no longer makes a circle bigger or smaller.
-- **The key under the header lists the branches and their colours**, not the depth
-  names (Root / Area / Topic / Subtopic / Detail), because those words will no longer
-  describe what the colours mean.
+  **Every leaf is the same small size** — the rim reads as uniform end points, nothing
+  hanging off them. The hub stays the biggest thing on screen. Depth on its own no
+  longer makes a circle bigger or smaller.
+- **Depth is no longer encoded in the picture at all.** Distance from the hub already
+  says it. Colour means group, size means has-children, and that is the whole legend.
+- **The key under the header lists the ring topics and their colours** — around six
+  entries, a short strip — replacing the depth names (Root / Area / Topic / Subtopic /
+  Detail), which will no longer describe anything.
 
 Checkable: pick any leaf on the rim and you can name the group it belongs to from its
 colour alone, without following an edge. Pick any two circles of clearly different
-size and the bigger one always has something hanging off it.
+size and the bigger one always has something hanging off it. No two same-coloured
+parents are visible near each other.
 
 ## Affected users and systems
 
 - **Users / roles:** anyone reading `/graph` — the whole audience for the page. No
   authoring workflow changes; `seed.ts` is not being asked to carry colours or sizes.
-- **Systems / systems touched, as far as the originator knows:** the `/graph` scene and
-  its colour tokens. The depth-driven colour ramp and the depth-driven radii are both
-  being replaced as the rule that drives the picture. The depth key in the route header
-  is replaced. [assumed] the layout — hub, ring, branch angles, camera fence — is not
-  in scope and does not move.
+- **Systems touched, as far as the originator knows:** the `/graph` scene and its colour
+  tokens. The depth-driven colour ramp and the depth-driven radii are both replaced as
+  the rule that drives the picture. The depth key in the route header is replaced.
+  [assumed] the layout — hub, ring, branch angles, camera fence — is not in scope and
+  does not move.
 - **Data:** none. Public, committed content.
 
 ## Constraints
@@ -62,35 +73,19 @@ size and the bigger one always has something hanging off it.
   tree's own shape.
 - Whatever replaces the ramp has to work in light and dark mode, and has to be
   validated the same way the current one was (`dataviz`), not eyeballed.
-- The current tree has **eleven non-root nodes with children**, and the seed is meant
-  to grow. Eleven is already more than a categorical palette can keep reliably
-  distinct, so "a distinct colour per parent" has a ceiling that this change has to
-  say something about rather than discover later.
+- **The five-level depth cap stays**, with a new reason. It exists today because the
+  ramp has five steps; after this it is a deliberate limit on how deep the content may
+  go, for readability and authoring. A sixth level still fails the build.
 - Accessibility of the scene itself is already recorded debt
   (`intent/graph-accessibility/`) and this change is not expected to pay it off — but
-  it must not make things worse. Today depth is carried by colour *and* size together
-  precisely so colour is never the only cue; after this change colour carries group and
-  size carries has-children, and neither backs the other up.
+  it must not make things worse.
 
 ## Open questions
 
-- [ ] What happens past the palette's ceiling — do colours repeat once the parents
-      outnumber the hues, and if so, repeat in a way that never puts two of the same
-      colour side by side? Or is the distinct-colour rule capped at some depth and
-      deeper parents keep inheriting? — *owner: product owner + design stage*
-- [ ] "Slightly changed" for leaves — how far apart do two leaves of the same parent
-      sit, and do they differ from each other at all, or are they all the identical
-      shade? — *owner: product owner*
-- [ ] Should a parent still be able to tell you its depth at a glance, or is depth
-      simply no longer something the picture shows? The key is becoming a branch key,
-      so the depth story would be gone entirely. — *owner: product owner*
-- [ ] Does the hub keep a colour of its own (neutral / dark, as today), or does it join
-      the palette? — *owner: product owner*
-- [ ] Does the branch key list all eleven-plus parents, or only the ring topics? A key
-      with a dozen entries is a different component from one with six. — *owner:
-      product owner + design stage*
-- [ ] With colour no longer a five-step ordinal ramp, does the hard five-level depth
-      cap still have a reason to exist? It exists today *because* the ramp has five
-      steps. — *owner: product owner*
-- [ ] Is one small size for every leaf right, or should a leaf still shrink a little
-      with depth so the rim does not flatten? — *owner: product owner*
+- [ ] Colour and size no longer back each other up. Today depth is carried by both, so
+      colour is never the only cue; after this, group is carried by colour alone.
+      Whether reused hues plus a neutral hub clear contrast and colour-vision-deficiency
+      checks in both modes is for `dataviz` validation to answer, and it may force the
+      hue count down. — *owner: design stage*
+- [ ] "Never adjacent" needs a definition the spec can assert — adjacent in the tree,
+      adjacent on screen after layout, or both. — *owner: design stage*
