@@ -29,8 +29,13 @@ export function depthToken(depth: number): string {
  * Monotonically decreasing, root largest. The secondary encoding that keeps depth
  * from being carried by colour alone (spec §9.2) - five steps of one hue are five
  * steps of one grey to a viewer with a colour-vision deficiency.
+ *
+ * The root's step is deliberately far ahead of the rest rather than one more move
+ * along the sequence: the hub has to read as "the thing everything hangs off",
+ * which means unmistakably larger than a ring topic and large enough to hold its
+ * own name inside it (spec FR-1, §9.2). A tuning value, judged on screen.
  */
-const RADII = [1.6, 1.05, 0.75, 0.55, 0.42] as const;
+const RADII = [2.6, 1.05, 0.75, 0.55, 0.42] as const;
 
 export function radiusForDepth(depth: number): number {
   const radius = RADII[depth];

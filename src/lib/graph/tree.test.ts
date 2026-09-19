@@ -10,14 +10,14 @@ describe("flatten", () => {
     expect(nodes).toHaveLength(36);
     // A tree: every node but the root has exactly one parent edge.
     expect(edges).toHaveLength(nodes.length - 1);
-    expect(nodes[0]).toMatchObject({ id: "ai", depth: 0, parentId: null });
+    expect(nodes[0]).toMatchObject({ id: "pd-ai", depth: 0, parentId: null });
     expect(nodes.filter((node) => node.parentId === null)).toHaveLength(1);
   });
 
   it("derives ids from the slugified name path", () => {
     const ids = flatten(seed).nodes.map((node) => node.id);
 
-    expect(ids).toContain("ai/n-node/rag/vector-db/pgvector");
+    expect(ids).toContain("pd-ai/n-node/rag/vector-db/pgvector");
     expect(ids.every((id) => /^[a-z0-9-]+(\/[a-z0-9-]+)*$/.test(id))).toBe(
       true,
     );
@@ -27,9 +27,9 @@ describe("flatten", () => {
   it("counts leaves per subtree", () => {
     const byId = new Map(flatten(seed).nodes.map((node) => [node.id, node]));
 
-    expect(byId.get("ai/protocols")?.leafCount).toBe(3);
-    expect(byId.get("ai/protocols/a2a")?.leafCount).toBe(1);
-    expect(byId.get("ai")?.leafCount).toBe(
+    expect(byId.get("pd-ai/protocols")?.leafCount).toBe(3);
+    expect(byId.get("pd-ai/protocols/a2a")?.leafCount).toBe(1);
+    expect(byId.get("pd-ai")?.leafCount).toBe(
       [...byId.values()].filter((node) => node.leafCount === 1).length,
     );
   });

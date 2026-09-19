@@ -3,7 +3,12 @@ import { flatten } from "@/lib/graph/tree";
 import { layout } from "@/lib/graph/layout";
 import { radiusForDepth } from "@/lib/graph/palette";
 import type { GraphSceneNode, Vec3 } from "@/lib/graph/types";
-import { declutter, LABEL_POOL_SIZE, selectLabelled } from "./graph-labels";
+import {
+  declutter,
+  LABEL_MAX_PX,
+  LABEL_POOL_SIZE,
+  selectLabelled,
+} from "./graph-labels";
 
 /** 148 nodes - the envelope NFR-1 was written against, not the day-one 36. */
 function wideScene(): GraphSceneNode[] {
@@ -154,6 +159,30 @@ describe("declutter", () => {
     const result = declutter([faded, at("visible", 400, 300)]);
 
     expect(result[1]!.opacity).toBe(1);
+  });
+
+  // FR-1, §9.2
+  it("reserves the box on a centred label's own node, not above it", () => {
+    const hub = { ...at("PD AI", 400, 300), centred: true };
+    const below = at("Protocols", 400, 330);
+
+    expect(declutter([hub, below])[1]!.opacity).toBe(0);
+    // The same two labels with the hub drawn above its node like every other one:
+    // its box sits a line higher and no longer reaches the second.
+    expect(declutter([{ ...hub, centred: false }, below])[1]!.opacity).toBe(1);
+  });
+
+  // FR-8
+  it("reserves no more width than a truncated label actually draws", () => {
+    const long = "A very long topic title that the label has to truncate";
+    const result = declutter([
+      at(long, 400, 300),
+      at(long, 400 + LABEL_MAX_PX + 8, 300),
+    ]);
+
+    // Two labels a truncation width apart both survive: the ellipsis is where the
+    // text stops, so that is where the box has to stop too.
+    expect(result.map((placement) => placement.opacity)).toEqual([1, 1]);
   });
 
   it("does not change how many elements the pool is given", () => {

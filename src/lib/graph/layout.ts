@@ -12,8 +12,16 @@ import type { GraphNode, Vec3 } from "@/lib/graph/types";
  * not depend on which numbers these are.
  */
 
-/** Distance between consecutive depth shells. */
-const SHELL_GAP = 9;
+/** Distance between consecutive depth shells, from the ring outward. */
+const SHELL_GAP = 12;
+
+/**
+ * Hub -> ring. Deliberately larger than `SHELL_GAP`: this gap is the whole
+ * mechanism behind "the middle reads as the middle" (spec FR-2, V-3). A tuning
+ * value like the rest, but the invariant it has to satisfy - wider than any later
+ * shell increment - is asserted in `layout.test.ts`.
+ */
+const RING_RADIUS = 20;
 
 /**
  * How much of the room left over after a child's own cone is reserved the spiral
@@ -25,8 +33,43 @@ const CONE_FILL = 0.9;
 /** Spreads n directions evenly without n-specific special cases. */
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-/** The root's children get the whole sphere, which is what makes it read as a hub. */
-const ROOT_HALF_ANGLE = Math.PI;
+/**
+ * The distance from the origin to a depth's shell. The root sits at the origin, so
+ * depth 1 - the ring - is the first shell and every later one steps out by
+ * `SHELL_GAP` from it.
+ */
+function shellRadius(depth: number): number {
+  return depth === 0 ? 0 : RING_RADIUS + SHELL_GAP * (depth - 1);
+}
+
+/**
+ * Where the `index`th of `count` ring topics sits: an even split of the azimuth at a
+ * fixed elevation, so depth 1 is a horizontal circle rather than a spherical shell
+ * (spec FR-3, V-1, V-2).
+ *
+ * The split ignores `leafCount` on purpose, and it is the one place the layout's
+ * "room in proportion to what you carry" rule is not applied: the ring's job is to
+ * be a frame a viewer can always take their bearings from, and a slice sized to a
+ * subtree would make the ring itself carry a size comparison nobody told the viewer
+ * they were looking at (spec §3 Q3, §9.1). A heavy branch shows its weight by
+ * reaching further and wider once it leaves the ring.
+ */
+function ringDirection(index: number, count: number): Vec3 {
+  const azimuth = index * ((2 * Math.PI) / count);
+  return [Math.cos(azimuth), 0, Math.sin(azimuth)];
+}
+
+/**
+ * Half the arc one ring topic owns, less the usual margin. Under a half-slice
+ * (`π / count`), so a topic's whole subtree stays inside its own wedge and two
+ * neighbouring branches can never interleave (spec FR-4). Under a right angle too,
+ * which is what makes "a branch never grows back toward the centre" true of every
+ * descendant and not just the first generation: a cone narrower than 90° around a
+ * horizontal ray has a positive radial component throughout.
+ */
+function ringHalfAngle(count: number): number {
+  return (Math.PI / count) * CONE_FILL;
+}
 
 function normalize([x, y, z]: Vec3): Vec3 {
   const length = Math.hypot(x, y, z) || 1;
@@ -102,8 +145,11 @@ export function layout(nodes: GraphNode[]): Map<string, Vec3> {
   for (const node of nodes) {
     if (node.parentId === null) {
       positions.set(node.id, [0, 0, 0]);
+      // The root's own direction and cone are never read: its children go on the
+      // ring, which sizes its own slices. They are set so the maps stay total, and
+      // `[0, 1, 0]` is the axis that ring is drawn around.
       directions.set(node.id, [0, 1, 0]);
-      halfAngles.set(node.id, ROOT_HALF_ANGLE);
+      halfAngles.set(node.id, Math.PI);
       phases.set(node.id, 0);
     }
 
@@ -122,15 +168,15 @@ export function layout(nodes: GraphNode[]): Map<string, Vec3> {
 
     children.forEach((child, index) => {
       const phi = parentPhase + index * GOLDEN_ANGLE;
-      const halfAngle = halfAngleForShare(
-        parentHalfAngle,
-        child.leafCount / totalLeaves,
-        children.length,
-      );
-      const theta = isRoot
-        ? // Equal-area over the whole sphere: the hub with clusters radiating out.
-          Math.acos(1 - (2 * (index + 0.5)) / children.length)
-        : children.length === 1
+      const halfAngle = isRoot
+        ? ringHalfAngle(children.length)
+        : halfAngleForShare(
+            parentHalfAngle,
+            child.leafCount / totalLeaves,
+            children.length,
+          );
+      const theta =
+        children.length === 1
           ? // A chain runs straight out from its parent rather than veering off.
             0
           : // Spiral inside what is left of the parent's cone once this child's own
@@ -139,16 +185,18 @@ export function layout(nodes: GraphNode[]): Map<string, Vec3> {
             CONE_FILL *
             Math.sqrt((index + 0.5) / children.length);
 
-      const direction = directionInCone(parentDirection, theta, phi);
-      const shellRadius = SHELL_GAP * child.depth;
+      const direction = isRoot
+        ? ringDirection(index, children.length)
+        : directionInCone(parentDirection, theta, phi);
+      const radius = shellRadius(child.depth);
 
       directions.set(child.id, direction);
       halfAngles.set(child.id, halfAngle);
       phases.set(child.id, phi + GOLDEN_ANGLE / 2);
       positions.set(child.id, [
-        direction[0] * shellRadius,
-        direction[1] * shellRadius,
-        direction[2] * shellRadius,
+        direction[0] * radius,
+        direction[1] * radius,
+        direction[2] * radius,
       ]);
     });
   }
@@ -160,7 +208,7 @@ export function layout(nodes: GraphNode[]): Map<string, Vec3> {
 export function sceneRadius(nodes: GraphNode[]): number {
   return nodes.reduce(
     (max, node) =>
-      Math.max(max, SHELL_GAP * node.depth + radiusForDepth(node.depth)),
+      Math.max(max, shellRadius(node.depth) + radiusForDepth(node.depth)),
     0,
   );
 }

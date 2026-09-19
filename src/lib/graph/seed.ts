@@ -12,7 +12,10 @@ import type { GraphSeed } from "@/lib/graph/types";
  * express.
  */
 export const seed = {
-  name: "AI",
+  // The hub reads its own name inside the circle (spec FR-1). Still provisional:
+  // whether "PD AI" is the real name or a placeholder is the originator's call
+  // (spec §3, Q1).
+  name: "PD AI",
   children: [
     {
       name: "AI Agents",

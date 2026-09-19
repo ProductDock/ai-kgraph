@@ -16,7 +16,7 @@ export interface GraphSeed {
 
 /** A node after flattening: its id, where it sits, and how much hangs off it. */
 export interface GraphNode {
-  /** Slugified name path, e.g. `ai/n-node/rag/vector-db/pgvector`. */
+  /** Slugified name path, e.g. `pd-ai/n-node/rag/vector-db/pgvector`. */
   id: string;
   name: string;
   /** 0 for the root, capped at MAX_DEPTH (spec D-5). */

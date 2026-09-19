@@ -4,7 +4,12 @@
   a camera that stays put*
 - **Originator:** Nemanja (nemanja.vasic@productdock.com)
 - **Stage:** 2 — requirements & design (AI-Native SDLC, lesson 3)
-- **Status:** drafted, awaiting review
+- **Status:** merged (#24), then amended during Stage 4 — see *Amendments from the build*
+
+> **Four claims in this spec were falsified by building it.** They are corrected in place
+> below and listed in *Amendments from the build* at the end, per the playbook's rule that
+> a spec later stages read as approved intent must stay true. Nothing about the product
+> requirements (Part A, FR-1…FR-9) changed.
 
 ## Review guide
 
@@ -191,7 +196,8 @@ change inside files that already exist, or a small addition to one of them:
 | `src/app/graph/_components/graph-scene.tsx` | `OrbitControls`' polar-angle and minimum-distance bounds are set to fence the camera to the ring (§9.3); the opening camera azimuth is set deliberately (§9.4); `focusNode`'s framing extent is extended to include the clicked node's parent, not only its children (§9.5); several tuning constants (fog, label fade, overview distance) are retuned for the new geometry (§9.6). |
 | `src/app/graph/_components/graph-labels.tsx` | The root's label is special-cased: centred on the node rather than offset above it, and exempted from the distance-fade opacity calculation (§9.2). |
 | `src/lib/graph/seed.ts` | One content edit: the root's `name` changes from `"AI"` to `"PD AI"` (§3, Q1) — still just a name in the one file content changes ever touch. |
-| `src/lib/graph/layout.test.ts` | New invariants for the ring and the hub-to-ring gap (§11). |
+| `src/lib/graph/layout.test.ts` | New invariants for the ring and the hub-to-ring gap (§11), and the root's id updated (below). |
+| `src/lib/graph/tree.test.ts`, `src/lib/graph/types.ts`, `src/lib/graph/tree.ts` | **Amended in.** Ids are the slugified *name path*, so renaming the root from "AI" to "PD AI" moves every id in the tree: five assertions in `tree.test.ts` pin real-seed ids literally, and two docstrings carry `ai/n-node/…` as their example. Nothing else in the app persists an id — no URL state, no storage, no deep links — so this is mechanical today, and a breaking change the day an id becomes a link. |
 | `CLAUDE.md` | The `## Graph data` section is amended to describe the hub/ring shape, the camera's restricted envelope, and that a click now frames a node's parent as well as its children — the parts of that section describing the previous full-sphere layout and children-only framing are updated in place, not left stale. |
 
 `src/lib/graph/**` stays framework-agnostic — nothing in `layout.ts` or `palette.ts` learns
@@ -298,6 +304,19 @@ existing `OrbitControls` options in the version already pinned.
 
 #### 9.4 The opening view
 
+**Amended after the build (§A-1).** The initial *distance* is also no longer a multiple of
+the scene radius. `PerspectiveCamera`'s fov is the vertical one, so a fixed multiple crops
+the sides of a portrait viewport: at 820×1180 the outer branches and labels were cut off at
+both edges, which falsifies this spec's answer to Q5 ("the camera already fits the whole
+graph to the screen regardless of physical screen size" — it fits vertically only).
+Measured from the desktop frame, the content reaches ±57 world units horizontally against
+±30 vertically, so it is not spherical either, and a bounding-sphere fit frames empty space
+on a desktop while still being the only thing that saves the tablet. The opening distance
+is therefore *solved* against the actual node positions, per screen axis. Fog and
+label-fade ranges become multiples of the current view distance for the same reason —
+keyed to the fixed scene radius, the whole graph fell inside the fade band at the tablet's
+new distance and dissolved into the page.
+
 The camera's initial azimuth is no longer arbitrary: with four evenly spaced ring topics
 (§9.1), starting the view at an azimuth offset by half the angle between two of them (a
 quarter-turn split in two) guarantees that no topic starts directly behind another, closing
@@ -315,8 +334,18 @@ clicking it keeps today's behaviour (recentre on the whole graph). The camera's 
 still derived by keeping whatever direction the viewer is already looking from and moving
 along it (today's rule, unchanged) — and because `OrbitControls` re-clamps polar angle and
 distance every frame regardless of how the camera's position was set, the fence from §9.3
-applies to every fly-to target automatically, with no extra clamping logic needed at the
-call site.
+applies to every fly-to target automatically.
+
+**Amended after the build (§A-2): "with no extra clamping logic needed at the call site"
+was wrong.** `minDistance` is measured from the orbit *target*, and the target moves to the
+clicked node on focus — so the fence stops guaranteeing anything about the hub in exactly
+the state using this feature puts a viewer in. Measured over a ~4,200-frame drive (every
+ring topic, twelve orbit steps each, a full dolly at each step), the camera's closest
+approach to the origin was 23.0 with an origin-relative clamp and **6.2 without it**,
+against a ring radius of 20. FR-6 fails without it. The scene therefore re-clamps the
+camera against the origin once per frame, after `controls.update()` and before the render —
+and without scheduling a frame of its own, since that is the silent 60fps loop the
+`inFrame` guard exists to prevent.
 
 #### 9.6 Retuned constants
 
@@ -327,8 +356,16 @@ invariants — the numbers that look right are chosen by building and looking at
 not derived on paper (Areas of concern, C-5). What must hold regardless of the exact numbers
 chosen is captured as testable invariants (§11), not as specific constants in this document.
 
-The label-truncation width keeps its existing fixed-width, ellipsis approach; §11 adds a
-tablet-viewport check before that width is treated as final, per §3 (Q2/Q5).
+~~The label-truncation width keeps its existing fixed-width, ellipsis approach~~ —
+**amended (§A-3): there was no existing approach to keep.** The shipped label layer sets
+`white-space: nowrap` and no width bound at all, so FR-8 is new work, not a retained
+behaviour: a max width, `overflow: hidden` and `text-overflow: ellipsis` on the pooled
+spans, with `declutter`'s width estimate clamped to the same number so the box it reserves
+matches the text the browser actually draws. §11 adds a tablet-viewport check before that
+width is treated as final, per §3 (Q2/Q5).
+
+The label *type size* also moved, at the originator's request on seeing it: 13px to 10px,
+with the declutter metrics derived from it rather than hardcoded (§A-4).
 
 ### 10. Security
 
@@ -418,3 +455,33 @@ move once someone looks at the built result. **The decision needed from you:** t
 spec's numbers as a first attempt, not a final answer, and expect a short "build it, look at
 it" pass before calling the reshape done — the same step that produced this intent in the
 first place.
+
+---
+
+## Amendments from the build
+
+Stage 4 changed four things this spec asserted. Recorded here so the spec and the built
+scene do not disagree, and so the next reader knows which parts were checked on screen
+rather than reasoned about on paper — the distinction C-5 was written to protect.
+
+- **A-1 — The opening framing is solved, not a constant (§9.4, §3 Q5).** A fixed multiple
+  of the scene radius crops a portrait viewport, because the fov is vertical. Q5's design
+  answer is now settled: the camera fits the actual content extent per screen axis, and
+  V-10 passes at 820×1180 rather than being waived. Q5 still has no *owner* for future
+  device questions.
+- **A-2 — The camera fence needs an origin-relative clamp (§9.5).** `minDistance` alone is
+  target-relative and leaves the hub's interior open after a focus. Measured: 6.2 from the
+  origin without the clamp, 23.0 with it, ring radius 20.
+- **A-3 — FR-8's truncation was new work (§9.6).** The shipped labels had no width bound.
+- **A-4 — Label type size is 10px (§9.6).** Changed by the originator on review, with the
+  declutter text metrics derived from the font size so the collision boxes keep matching
+  what is drawn.
+
+Two things this spec predicted that did *not* happen, recorded because they were the loudest
+risks going in:
+
+- Narrowing each ring topic's cone from ~92° to 40.5° did **not** crowd the deeper shells.
+  The 148-node separation invariant passed unchanged; worst descendant deviation was 25.7°
+  against the 40.5° limit.
+- No verification item had to be weakened. V-1…V-5 and the FR-4 containment invariant were
+  each confirmed to fail under a deliberate mutation before being trusted.

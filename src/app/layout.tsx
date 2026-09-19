@@ -35,7 +35,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={poppins.variable}>
+    // The inline script below sets data-theme on <html> before React hydrates,
+    // so the attribute is always present on the client and never in the server
+    // HTML. suppressHydrationWarning scopes that known, intended mismatch to
+    // this element's own attributes — it does not extend to children.
+    <html lang="en" className={poppins.variable} suppressHydrationWarning>
       <head>
         {/* Sets data-theme before first paint to avoid a flash of the wrong
             theme (spec §7.3). Runs under CSP Report-Only, so no nonce yet. */}
