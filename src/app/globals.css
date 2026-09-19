@@ -36,12 +36,26 @@
   --accent-secondary: #ea592a;
   --accent-secondary-hover: #c44821;
 
-  /* Group palette for the /graph scene (graph-branch-colour-and-size spec §8.1).
-     Colour says which group a node belongs to, never how deep it sits, so this is
-     a *categorical* set — a fixed order of distinct hues — where the old
-     --graph-depth-* ramp was an ordinal one. A leaf carries its group's own hue
-     unchanged; there is no lighter "leaf" step, because the eight hues already
-     span the validated lightness band and there is nothing left to step into.
+  /* Branch palette for the /graph scene (graph-branch-colour-and-size spec §8.1).
+     Colour says which BRANCH a node belongs to: one hue is spent per ring topic,
+     and everything under it carries that same hue one OKLCH lightness step lighter
+     per level and turned a little way around the hue circle from its siblings — so
+     a group and its children read as one family of related colours. This is still a
+     *categorical* set — a fixed order of distinct hues — and these eight values are
+     the branch ROOTS. The rest of each family is computed from them at draw time
+     (`familyShade` in lib/graph/colour-metrics.ts), which is why there is no
+     --graph-branch-N-light token: the step is taken from whatever THIS file
+     declares for the theme in force.
+
+     How far a descendant may turn is bounded by the gap between THESE hues: the
+     closest ring pair is 67° apart, and the fan spends 26.25°. Re-valuing a slot
+     narrows or widens that margin, and palette.contract.test.ts asserts it.
+
+     A tinted descendant sits deliberately ABOVE the validated lightness band, and
+     in light mode below the contrast the band was protecting — that is the cost of
+     the family tint, taken knowingly, and it leans on the same visible-label relief
+     described below. The band still binds on the eight values here, which are what
+     the header key lists and what every separation check runs on.
 
      The values are the `dataviz` skill's default categorical palette with two
      measured deviations, both in the light column, both recorded here because the
@@ -105,9 +119,13 @@
      --graph-space-near is the colour at the vanishing point, which is where
      distant nodes end up, so it is also what the scene's fog fades into — the
      two must stay equal or far nodes dissolve into a halo of the wrong hue.
-     In light it is the page itself; the depth comes from the outer colour. */
+     In light it is the page itself; the depth comes from the outer colour,
+     which sits on its own floor: `palette.contract.test.ts` holds orange and
+     red at 3:1 against it and both clear by 0.02-0.08, so the corners cannot
+     be darkened by re-valuing this. Darkening them is the gradient's *size*
+     (see .graph-space). */
   --graph-space-near: var(--page);
-  --graph-space-far: #dfe6ee;
+  --graph-space-far: #dde4ec; /* as dark as the contrast floor allows */
   --graph-label-halo: var(--graph-space-near);
 
   --font-sans:
@@ -256,10 +274,16 @@
  * Contrast only improves: the outer colour moves *away* from every node hue in
  * both themes, so the ramp validator's numbers against --page stay the floor
  * rather than the ceiling.
+ *
+ * The ellipse is deliberately *smaller* than the frame (88% x 66% of it): sized
+ * past the corners, the ramp never reaches its outer colour where the eye most
+ * needs it, and the frame reads flat however dark that colour is. At this size
+ * the corners sit at ~85% of the ramp (top) and its far end (bottom), which is
+ * what puts a visible vignette around the scene in light mode.
  */
 .graph-space {
   background: radial-gradient(
-    125% 95% at 50% 42%,
+    88% 66% at 50% 42%,
     var(--graph-space-near) 0%,
     var(--graph-space-far) 100%
   );
