@@ -130,9 +130,15 @@ Unit assertions to exist and pass in `graph-labels.test.ts`:
   `d`, `h`, and proportional to the radius ratio above the floor.
 - **V-4** — `labelOffsetPx(r, 20, h, 50) > labelOffsetPx(r, 80, h, 50)`.
 - **V-5** — `labelOffsetPx(0.42, 100000, h, 50) === MIN_GAP_PX`.
-- **V-6** — `declutter([at("A", 400, 300), at("B", 400, 290)])` keeps both (the box no
+- **V-6** — `declutter([at("A", 400, 300), at("B", 400, 285)])` keeps both (the box no
   longer reaches upward), and `declutter([at("A", 400, 300), at("B", 400, 308)])` drops the
   second. Existing `selectLabelled` tests unchanged and still green.
+
+  *Deviation from the drafted plan:* the first case was written with B at `290`, ten
+  pixels above A. That does not test what it says — `LABEL_HEIGHT` is 13, so B's own box
+  (`290…303`) still overlaps A's (`300…313`) and the label is correctly dropped. The gap
+  has to exceed a line height for the "nothing reaches upward" property to be the thing
+  under test, hence `285`. The assertion is unchanged in kind.
 - **V-11** — `layout.test.ts`, `tree.test.ts`, `graph-view.test.tsx` untouched and green.
 
 Manual, on `npm run dev` at `/graph`:

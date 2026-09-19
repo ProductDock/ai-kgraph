@@ -136,7 +136,11 @@ changes no file in it.
   describe the DOM. Do not "simplify" it to use the store.
 - **Labels are 10px, truncated with an ellipsis at `LABEL_MAX_PX`.** `declutter`'s rough
   text metrics are derived from the font size and clamped to that same width — change one
-  and the collision boxes stop matching the text actually drawn.
+  and the collision boxes stop matching the text actually drawn. **A label sits below its
+  own circle, never on it**: `labelOffsetPx` in `graph-labels.tsx` projects the node's
+  _drawn_ radius (base radius × its live hover/focus scale) to screen pixels and adds a
+  proportional gap, so a hovered circle cannot grow into its own name — and the hub is not
+  an exception (`intent/graph-labels-under-nodes/`).
 - **Single click is spent on camera focus.** The deferred node popup gets **double-click
   on desktop and long-press on tablet** — decided, not built. Picking already resolves to
   a node id in one handler in `graph-scene.tsx`, which is where it attaches.
