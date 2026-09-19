@@ -30,7 +30,9 @@ import {
   HUE_COUNT,
   hueToken,
   NODE_TERMINATOR,
+  TINT_CEILING,
 } from "@/lib/graph/colour";
+import { familyShade } from "@/lib/graph/colour-metrics";
 import type { GraphScene } from "@/lib/graph/types";
 import {
   declutter,
@@ -89,6 +91,22 @@ const SHADOW_SPREAD = 1.35;
 const FLOOR_MARGIN = 1.18;
 const FLOOR_DROP = 0.22;
 /**
+ * Edges are arcs, not chords (§7.4 kept the geometry open). A straight line between
+ * two spheres is the one mark in the scene with no thickness, no shading and no
+ * perspective of its own: three points on it project to three points on the screen
+ * whatever the camera does, so it reads as a line drawn *on* the frame rather than
+ * as a link lying *in* it. Bowing it away from the floor gives it a plane - the arc
+ * foreshortens as the camera comes down, flattens as it rises - and it separates
+ * the pair of edges between nodes that happen to line up behind one another.
+ *
+ * The bow is a fraction of the edge's own length, so short leaf links stay nearly
+ * straight and only the long ring spans sweep. It is lifted along the component of
+ * world up perpendicular to the edge, which means a near-vertical edge bows
+ * sideways instead of collapsing onto itself.
+ */
+const EDGE_BOW = 0.09;
+const EDGE_SEGMENTS = 14;
+/**
  * The opening sweep. The floor makes the scene *look* three-dimensional in a still
  * frame; a few degrees of azimuth on load makes it *behave* three-dimensional -
  * parallax between the near and far halves of the tree is the cue nothing static
@@ -107,6 +125,13 @@ const FLOOR_DROP = 0.22;
  * in both themes, so contrast only improves. Without it the nodes are flat discs
  * and no amount of backdrop makes the scene read as 3D.
  */
+/**
+ * The tint maths works on a six-digit hex and throws on anything else, and what a
+ * token resolves to is a stylesheet's business - so a hue declared some other way
+ * is drawn flat rather than taking the scene down with it.
+ */
+const HEX = /^#[0-9a-f]{6}$/i;
+
 const AMBIENT = NODE_TERMINATOR;
 const KEY = 1 - AMBIENT;
 /**
@@ -304,12 +329,58 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     nodeMesh.instanceMatrix.needsUpdate = true;
 
     // ---- edges: one LineSegments, one draw call -------------------------------
-    const edgeVertices = new Float32Array(edges.length * 6);
+    // Each edge is a quadratic arc sampled into EDGE_SEGMENTS chords - see the note
+    // on EDGE_BOW. Still one geometry and one draw call; the cost is vertices, not
+    // batches.
+    const edgeFrom = new Vector3();
+    const edgeTo = new Vector3();
+    const edgeDirection = new Vector3();
+    const edgeLift = new Vector3();
+    const edgeControl = new Vector3();
+    const edgeHere = new Vector3();
+    const edgeThere = new Vector3();
+
+    /** The point at `t` along the arc, written into `out`. */
+    function arcPoint(out: Vector3, t: number) {
+      const inverse = 1 - t;
+      return out
+        .copy(edgeFrom)
+        .multiplyScalar(inverse * inverse)
+        .addScaledVector(edgeControl, 2 * inverse * t)
+        .addScaledVector(edgeTo, t * t);
+    }
+
+    const edgeVertices = new Float32Array(edges.length * EDGE_SEGMENTS * 6);
     edges.forEach((edge, index) => {
-      const source = nodes[indexById.get(edge.sourceId)!]!.position;
-      const target = nodes[indexById.get(edge.targetId)!]!.position;
-      edgeVertices.set(source, index * 6);
-      edgeVertices.set(target, index * 6 + 3);
+      edgeFrom.fromArray(nodes[indexById.get(edge.sourceId)!]!.position);
+      edgeTo.fromArray(nodes[indexById.get(edge.targetId)!]!.position);
+      const length = edgeFrom.distanceTo(edgeTo);
+      edgeDirection.subVectors(edgeTo, edgeFrom).normalize();
+      // World up, with the part of it that runs along the edge removed: what is
+      // left is perpendicular to the edge, so the arc always bows *across* it.
+      edgeLift
+        .copy(WORLD_UP)
+        .addScaledVector(edgeDirection, -WORLD_UP.dot(edgeDirection));
+      // Parallel to up, so there is no perpendicular to bow along: leave it
+      // straight rather than picking an arbitrary direction that would make one
+      // edge in the tree lean for no reason the viewer can see.
+      if (edgeLift.lengthSq() < 1e-6) edgeLift.set(0, 0, 0);
+      else edgeLift.normalize();
+      // A quadratic sits half way to its control point at the midpoint, so the
+      // control point is lifted twice the bow the arc should actually have.
+      edgeControl
+        .addVectors(edgeFrom, edgeTo)
+        .multiplyScalar(0.5)
+        .addScaledVector(edgeLift, 2 * EDGE_BOW * length);
+
+      const base = index * EDGE_SEGMENTS * 6;
+      arcPoint(edgeHere, 0);
+      for (let step = 0; step < EDGE_SEGMENTS; step += 1) {
+        arcPoint(edgeThere, (step + 1) / EDGE_SEGMENTS);
+        edgeVertices.set(edgeHere.toArray(), base + step * 6);
+        edgeVertices.set(edgeThere.toArray(), base + step * 6 + 3);
+        edgeHere.copy(edgeThere);
+      }
     });
     const edgeGeometry = new BufferGeometry();
     edgeGeometry.setAttribute(
@@ -436,10 +507,26 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       if (shadowColour) shadowMaterial.color.set(shadowColour);
 
       nodes.forEach((node, index) => {
-        // The token name was decided once, at build time, rather than re-derived
-        // per frame: the node already carries it.
+        // The token name, the tint and the turn were all decided once, at build
+        // time, rather than re-derived per frame: the node already carries them.
+        // They are applied here and not baked into tokens, because each is a step
+        // *from* whatever the theme currently declares for that hue.
         const value = current[node.colourToken];
-        if (value) nodeMesh.setColorAt(index, colour.set(value));
+        if (!value) return;
+        const family = node.colourTint > 0 || node.colourHueShift !== 0;
+        nodeMesh.setColorAt(
+          index,
+          colour.set(
+            family && HEX.test(value)
+              ? familyShade(
+                  value,
+                  node.colourTint,
+                  node.colourHueShift,
+                  TINT_CEILING,
+                )
+              : value,
+          ),
+        );
       });
       if (nodeMesh.instanceColor) nodeMesh.instanceColor.needsUpdate = true;
     }
