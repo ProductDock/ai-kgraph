@@ -37,21 +37,39 @@
   --accent-secondary-hover: #c44821;
 
 
-  /* Depth ramp for the /graph scene (ai-knowledge-graph-3d spec §7.4). A
-     five-step ordinal ramp on the brand blue (--focus-ring) with its OKLCH hue
-     held constant: depth is ordered, so it wears one hue light-to-dark, never
-     the categorical palette. Contrast with the surface decreases with depth, so
-     the root is the highest-contrast mark and leaves recede.
+  /* Group palette for the /graph scene (graph-branch-colour-and-size spec §8.1).
+     Colour says which group a node belongs to, never how deep it sits, so this is
+     a *categorical* set — a fixed order of distinct hues — where the old
+     --graph-depth-* ramp was an ordinal one. A leaf carries its group's own hue
+     unchanged; there is no lighter "leaf" step, because the eight hues already
+     span the validated lightness band and there is nothing left to step into.
 
-     Validated with the `dataviz` skill's validate_palette.js --ordinal against
-     this app's own surfaces, both modes — re-run it if any value here is edited.
+     The values are the `dataviz` skill's own default categorical palette. The
+     ORDER is ours, and it is a safety mechanism rather than a preference: a chart
+     reads its palette adjacently, but this graph's ring is a circle of topics all
+     on screen at once, so every ring topic must separate from every other — the
+     validator's --pairs all case, which the documented order fails at the fourth
+     topic. Re-order or re-value anything here and validate_palette.js has to be
+     re-run against BOTH surfaces, adjacent for all eight and --pairs all for the
+     first four.
+
+     Measured (surfaces #ffffff / #0a0c0e, both modes): all eight pass adjacent;
+     the first four pass all-pairs. Magenta, yellow and aqua sit below 3:1 against
+     the light page and the fourth ring pair sits in the 6–8 CVD band — both carry
+     the validator's relief obligation, which the scene's labels and the header key
+     supply. That makes them load-bearing, not decorative.
+
      Deliberately not bridged into @theme inline: these are not shadcn slots,
      following the --accent-secondary precedent above. */
-  --graph-depth-0: #014976;
-  --graph-depth-1: #00619c;
-  --graph-depth-2: #027ac2;
-  --graph-depth-3: #3194de;
-  --graph-depth-4: #50affb;
+  --graph-hub: var(--text-primary);
+  --graph-branch-0: #2a78d6; /* blue */
+  --graph-branch-1: #008300; /* green */
+  --graph-branch-2: #e87ba4; /* magenta */
+  --graph-branch-3: #eda100; /* yellow */
+  --graph-branch-4: #1baf7a; /* aqua */
+  --graph-branch-5: #eb6834; /* orange */
+  --graph-branch-6: #4a3aa7; /* violet */
+  --graph-branch-7: #e34948; /* red */
 
   /* Its own opaque hex per scope rather than an alias of --gridline: THREE.Color
      cannot parse a functional rgb() with an alpha channel, which is what
@@ -82,11 +100,15 @@
     /* Re-stepped for the dark surface, not mirrored (spec NFR-6): a literal
        mirror of the light column also passes the validator, but at 2.07:1
        against the 2.0 light-end floor where this one gets 2.68:1. */
-    --graph-depth-0: #50affb;
-    --graph-depth-1: #3799e3;
-    --graph-depth-2: #1983cc;
-    --graph-depth-3: #036eaf;
-    --graph-depth-4: #025a90;
+  --graph-hub: var(--text-primary);
+  --graph-branch-0: #3987e5; /* blue */
+  --graph-branch-1: #008300; /* green */
+  --graph-branch-2: #d55181; /* magenta */
+  --graph-branch-3: #c98500; /* yellow */
+  --graph-branch-4: #199e70; /* aqua */
+  --graph-branch-5: #d95926; /* orange */
+  --graph-branch-6: #9085e9; /* violet */
+  --graph-branch-7: #e66767; /* red */
     --graph-edge: #2a2f35;
   }
 }
@@ -104,11 +126,15 @@
   /* Re-stepped for the dark surface, not mirrored (spec NFR-6): a literal
      mirror of the light column also passes the validator, but at 2.07:1
      against the 2.0 light-end floor where this one gets 2.68:1. */
-  --graph-depth-0: #50affb;
-  --graph-depth-1: #3799e3;
-  --graph-depth-2: #1983cc;
-  --graph-depth-3: #036eaf;
-  --graph-depth-4: #025a90;
+  --graph-hub: var(--text-primary);
+  --graph-branch-0: #3987e5; /* blue */
+  --graph-branch-1: #008300; /* green */
+  --graph-branch-2: #d55181; /* magenta */
+  --graph-branch-3: #c98500; /* yellow */
+  --graph-branch-4: #199e70; /* aqua */
+  --graph-branch-5: #d95926; /* orange */
+  --graph-branch-6: #9085e9; /* violet */
+  --graph-branch-7: #e66767; /* red */
   --graph-edge: #2a2f35;
 }
 

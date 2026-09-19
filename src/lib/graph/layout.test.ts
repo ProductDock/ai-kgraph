@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { layout, sceneRadius } from "@/lib/graph/layout";
-import { radiusForDepth } from "@/lib/graph/palette";
+import { HUB_RADIUS, radiusForNode } from "@/lib/graph/palette";
 import { seed } from "@/lib/graph/seed";
 import { flatten } from "@/lib/graph/tree";
 import type { GraphNode, Vec3 } from "@/lib/graph/types";
@@ -142,7 +142,7 @@ describe("layout", () => {
 
     // The hub is a sphere at the origin, so the gap a viewer sees starts at its
     // surface, not at its centre.
-    const hubToRing = shells[1]![1] - radiusForDepth(0);
+    const hubToRing = shells[1]![1] - HUB_RADIUS;
     const laterGaps = shells
       .slice(2)
       .map((shell, index) => shell[1] - shells[index + 1]![1]);
@@ -199,8 +199,7 @@ describe("layout", () => {
       for (let j = i + 1; j < tree.length; j += 1) {
         const a = tree[i]!;
         const b = tree[j]!;
-        const floor =
-          2.5 * Math.max(radiusForDepth(a.depth), radiusForDepth(b.depth));
+        const floor = 2.5 * Math.max(radiusForNode(a), radiusForNode(b));
         expect(
           distance(positions.get(a.id)!, positions.get(b.id)!),
         ).toBeGreaterThan(floor);

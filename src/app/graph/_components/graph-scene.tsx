@@ -21,7 +21,7 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
-import { depthToken, MAX_DEPTH } from "@/lib/graph/palette";
+import { HUB_TOKEN, HUE_COUNT, hueToken } from "@/lib/graph/colour";
 import type { GraphScene } from "@/lib/graph/types";
 import {
   declutter,
@@ -75,8 +75,14 @@ const LABEL_INTERVAL_MS = 1000 / 30;
 
 const WORLD_UP = new Vector3(0, 1, 0);
 
+/**
+ * Every token the scene reads, fixed and module-scope. `useThemeTokens` keys a
+ * `useCallback` on this array's identity, so building it per render - from the nodes,
+ * say - would re-run the hook every frame.
+ */
 const SCENE_TOKENS = [
-  ...Array.from({ length: MAX_DEPTH + 1 }, (_, depth) => depthToken(depth)),
+  HUB_TOKEN,
+  ...Array.from({ length: HUE_COUNT }, (_, slot) => hueToken(slot)),
   "--graph-edge",
   "--page",
 ] as const;
@@ -243,7 +249,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       if (edgeColour) edgeMaterial.color.set(edgeColour);
 
       nodes.forEach((node, index) => {
-        const value = current[depthToken(node.depth)];
+        // The token name was decided once, at build time, rather than re-derived
+        // per frame: the node already carries it.
+        const value = current[node.colourToken];
         if (value) nodeMesh.setColorAt(index, colour.set(value));
       });
       if (nodeMesh.instanceColor) nodeMesh.instanceColor.needsUpdate = true;

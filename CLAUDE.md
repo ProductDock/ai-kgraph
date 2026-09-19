@@ -56,10 +56,35 @@ changes no file in it.
 
 - **The tree is capped at five levels (depth 0–4), and the day-one seed already hits it.**
   The deepest node is `pd-ai/n-node/rag/vector-db/pgvector`. A sixth level fails the build
-  with a message naming the node — deliberately, because depth is encoded by a five-step
-  colour ramp and a sixth level would have no colour. Raising the cap means adding a
-  `--graph-depth-5` step, bumping `MAX_DEPTH` in `src/lib/graph/palette.ts`, **and
-  re-running the `dataviz` validator in both modes**. It is not a one-line change.
+  with a message naming the node. The cap used to exist because the colour ramp had five
+  steps; that ramp is gone and **nothing about colour or size would break at depth 5** —
+  it now stands on its own as a limit on how deep content may go before the tree stops
+  being readable at a glance and authorable in one file. Raising it is a content decision:
+  bump `MAX_DEPTH` in `src/lib/graph/palette.ts`, no palette step to add and no validator
+  to re-run.
+- **Colour means "which group", size means "is this a group" — neither means depth**
+  (`intent/graph-branch-colour-and-size/`). Every group gets its own hue from
+  `src/lib/graph/colour.ts`'s fixed eight-slot order, picked as the first slot its parent
+  and earlier siblings have not taken; a leaf carries its group's hue **unchanged**, and is
+  told apart by being smaller. A group is anything with children **or any topic on the
+  ring**, filled in or not — one predicate (`isGroup`) drives both colour and size, so the
+  two can never disagree on a node. Three radii, in `palette.ts`: hub, group, leaf.
+- **There is no leaf tint, and adding one is not a tuning exercise.** The validated
+  lightness band is L 0.43–0.77 light and only 0.48–0.67 dark, and the eight hues already
+  span it — yellow has 0.006 of headroom in light and 0.000 in dark. A "lighter step" comes
+  back identical to its base for three hues, and forcing one collapses the shades into each
+  other (yellow vs green, CVD ΔE 0.8 dark). Size carries "has nothing under it" instead.
+- **The ring holds four topics before two must share a colour, and `seed.ts` already has
+  four.** Ring topics are all on screen at once and listed together in the key, so they need
+  all-pairs colour separation, not the adjacent-pairs kind a chart needs — and only four of
+  the eight hues clear that. **A fifth top-level topic breaks it silently**: the assignment
+  wraps rather than failing the build. That is a known, accepted limit
+  (`intent/graph-branch-colour-and-size/spec.md`, C-2), not an oversight.
+- **`GROUP_RADIUS` is bounded by a test, not by taste.** `layout.test.ts` floors every node
+  pair's centre distance at 2.5× the larger radius, and deep groups — which took the
+  _smallest_ radii under the old ramp — now take this one. Measured, the closest pair
+  involving a group sits 5.98 apart in the 148-node synthetic seed, so anything past ~2.39
+  fails that test. It is at 1.05.
 - **The shape is a hub, a ring, and branches growing outward** (`intent/graph-ring-readability/`).
   Depth 1 is placed on one horizontal circle at `RING_RADIUS`, with the azimuth split
   **evenly** between topics regardless of what each carries — the one place the layout's
@@ -89,12 +114,23 @@ changes no file in it.
   names must be unique**. A duplicate fails the build. The path includes the root, so
   **renaming the root moves every id in the tree** — that is a find-and-replace across
   the tests, and it would be a breaking change the day an id becomes a deep link.
-- **New tokens in `globals.css`:** `--graph-depth-0…4` (the validated ordinal ramp),
-  `--graph-edge` and `--graph-label-halo`, declared in all three scopes. They are **not**
-  bridged into `@theme inline` — they are not shadcn slots, following the
-  `--accent-secondary` precedent. `--graph-edge` carries its own opaque hex per scope
-  rather than aliasing `--gridline`, because `THREE.Color` cannot parse the functional
-  `rgb()` with alpha that `--gridline` uses in dark mode.
+- **Graph tokens in `globals.css`:** `--graph-hub`, `--graph-branch-0…7` (the validated
+  categorical palette), `--graph-edge` and `--graph-label-halo`, declared in all three
+  scopes. They are **not** bridged into `@theme inline` — they are not shadcn slots,
+  following the `--accent-secondary` precedent. `--graph-edge` carries its own opaque hex
+  per scope rather than aliasing `--gridline`, because `THREE.Color` cannot parse the
+  functional `rgb()` with alpha that `--gridline` uses in dark mode.
+- **The palette's slot _order_ is a safety mechanism, not a preference.** The values are the
+  `dataviz` skill's default categorical set; the order is ours, because the skill's own
+  order fails the ring's all-pairs check at the fourth topic (yellow vs orange,
+  normal-vision ΔE 10.6 dark, floor 15). Re-order or re-value anything and re-run
+  `validate_palette.js` against **both** surfaces — adjacent for all eight, `--pairs all`
+  for the first four.
+- **The header key is load-bearing for accessibility, not decoration.** Magenta, yellow and
+  aqua sit below 3:1 against the light page, and the fourth ring pair sits in the
+  validator's 6–8 CVD band. Both are legal only with the "visible labels" relief the
+  validator requires, which the scene's label layer and `branch-key.tsx` supply together.
+  Dropping either re-opens that check.
 - The scene reads those tokens off the DOM (`use-theme-tokens.ts`), **not** from
   `useUiStore` — that store hardcodes `theme: "light"` and never hydrates, so it does not
   describe the DOM. Do not "simplify" it to use the store.
