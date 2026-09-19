@@ -20,7 +20,7 @@ This spec has two audiences, and it's split so each can stop where their job end
 - **Both:** read **Areas of concern** at the end. Every item there is written so the product
   owner can act on it without reading Part B.
 
-Section numbers run continuously across both parts, so a cross-reference like "see §9.2"
+Section numbers run continuously across both parts, so a cross-reference like "see §8.2"
 always points at the same place no matter which part you're in.
 
 ---
@@ -105,8 +105,8 @@ The intent left two questions open. Both are answered here.
 
 | # | Open question | Decision |
 | --- | --- | --- |
-| Q1 | Do reused colours plus a neutral centre still pass contrast and colour-vision-deficiency checks in both light and dark mode, and does that force the colour count down? | **Answered provisionally: no, the colour count should not need to come down.** The eight colours picked (§9.1) already pass the same accessibility checks the current ramp was validated against, by a comfortable margin, on background colours very close to this app's own. The exact numbers **for this app's own background colours** are re-checked in the build stage before this ships (§11, V-8), the same way the current ramp's numbers were checked when it was built — this is a "measure it once it exists" confirmation, not a design change expected to follow. |
-| Q2 | Does "never two same-coloured groups visible near each other" mean near in the tree, near on screen, or both? | **Answered: near in the tree is enough, and it already guarantees near on screen too.** Two groups are treated as "near" exactly when one is the other's immediate parent, or they share the same immediate parent (are siblings). The graph's existing shape rule — a branch's entire subtree always stays inside its own slice of the picture and can never spread into a neighbouring branch's slice, already checked automatically today — is what makes that tree-level rule also true on screen: two branches that aren't near each other in the tree physically cannot end up near each other on screen either. No separate on-screen check is needed on top of it (§9.3). |
+| Q1 | Do reused colours plus a neutral centre still pass contrast and colour-vision-deficiency checks in both light and dark mode, and does that force the colour count down? | **Answered provisionally: no, the colour count should not need to come down.** The eight colours picked (§8.1) already pass the same accessibility checks the current ramp was validated against, by a comfortable margin, on background colours very close to this app's own. The exact numbers **for this app's own background colours** are re-checked in the build stage before this ships (§10, V-8), the same way the current ramp's numbers were checked when it was built — this is a "measure it once it exists" confirmation, not a design change expected to follow. |
+| Q2 | Does "never two same-coloured groups visible near each other" mean near in the tree, near on screen, or both? | **Answered: near in the tree is enough, and it already guarantees near on screen too.** Two groups are treated as "near" exactly when one is the other's immediate parent, or they share the same immediate parent (are siblings). The graph's existing shape rule — a branch's entire subtree always stays inside its own slice of the picture and can never spread into a neighbouring branch's slice, already checked automatically today — is what makes that tree-level rule also true on screen: two branches that aren't near each other in the tree physically cannot end up near each other on screen either. No separate on-screen check is needed on top of it (§8.3). |
 
 ### 4. Decisions added beyond the intent
 
@@ -136,14 +136,14 @@ just because they're written down — confirm or cut each one.
 4. **"Near," for the purpose of never repeating a colour, is defined using the tree alone**
    (§3, Q2) — not by measuring pixels on screen. This is what makes the rule checkable by a
    test rather than by eyeballing a screenshot, and Part B explains why it's still safe to do
-   (§9.3).
+   (§8.3).
 5. **Eight is the ceiling on how many top-level topics the ring can ever hold** without two of
    them sharing a colour (§2.3; Areas of concern, C-2). This isn't a problem today — there are
    four — but it's a real limit worth knowing about before the tree grows.
 
 ### 5. Functional requirements
 
-Each of these is something you can point at on screen; verification is §11.
+Each of these is something you can point at on screen; verification is §10.
 
 - **FR-1.** Every node that has at least one thing under it is drawn in its own colour.
 - **FR-2.** Every node that carries nothing itself is drawn in one single, lighter version of
@@ -175,7 +175,7 @@ each other.
 | --- | --- |
 | **The eight colours carry no ProductDock brand approval (§4, D-1).** | This is the most visually prominent colour decision made on this page so far — six of eight colours on screen would be colours nobody at ProductDock chose. If that's not acceptable, this spec's whole colour approach needs to change, not just its palette. |
 | **The ring can only ever hold eight top-level topics before two must share a colour (§2.3, §4, D-5).** | Not a problem today, but it's a ceiling nobody has agreed to yet, and it will arrive without warning the day a ninth top-level topic is added. |
-| **Accessibility debt is explicitly not supposed to get worse, and the riskiest colours (the lightest, hardest-to-tell-apart ones) sit exactly at the rim** — the same place a colour-vision-deficient viewer, or the keyboard/screen-reader user from the already-open accessibility work, already struggles most. | The intent is explicit that this change must not make that debt worse. Part B's checks are designed to confirm that, but as of this spec they have not yet been run against this app's actual colours (§3, Q1; §11, V-8). |
+| **Accessibility debt is explicitly not supposed to get worse, and the riskiest colours (the lightest, hardest-to-tell-apart ones) sit exactly at the rim** — the same place a colour-vision-deficient viewer, or the keyboard/screen-reader user from the already-open accessibility work, already struggles most. | The intent is explicit that this change must not make that debt worse. Part B's checks are designed to confirm that, but as of this spec they have not yet been run against this app's actual colours (§3, Q1; §10, V-8). |
 | **The two still-unnamed ring topics and the note-style leaf labels are untouched.** | Once colour makes the groups obvious at a glance, a viewer's very next question is "what is 'n Node'?" — the same problem the previous reshape flagged, one layer further exposed rather than solved. |
 | **The childless ring topic now looks doubly inconsistent** — its own colour and key entry, but leaf-sized (§4, D-2). | The previous spec already flagged this node as visibly lopsided; this spec adds a second, different kind of inconsistency on top of it rather than resolving either. |
 
@@ -191,16 +191,16 @@ rewrite of a small, already-isolated module, or a small edit to a file that alre
 
 | File | Change |
 | --- | --- |
-| `src/lib/graph/palette.ts` | The five-step depth ramp and `radiusForDepth` are removed. Radius becomes a three-way choice — hub, "has children," or leaf — as a function of a node's own shape rather than its depth (§9.4). `MAX_DEPTH` and the depth cap stay, with the docstring's rationale rewritten: the cap is now a readability/authoring limit on its own terms, not a side effect of a five-step colour ramp having five steps (per the intent's constraint). |
-| `src/lib/graph/colour.ts` (new) | The colour-assignment algorithm (§9.2): a pure function from the flattened node list to a colour token per node. Framework-agnostic, like the rest of `lib/graph` — no `three`, no CSS, just token names as strings. |
+| `src/lib/graph/palette.ts` | The five-step depth ramp and `radiusForDepth` are removed. Radius becomes a three-way choice — hub, "has children," or leaf — as a function of a node's own shape rather than its depth (§8.4). `MAX_DEPTH` and the depth cap stay, with the docstring's rationale rewritten: the cap is now a readability/authoring limit on its own terms, not a side effect of a five-step colour ramp having five steps (per the intent's constraint). |
+| `src/lib/graph/colour.ts` (new) | The colour-assignment algorithm (§8.2): a pure function from the flattened node list to a colour token per node. Framework-agnostic, like the rest of `lib/graph` — no `three`, no CSS, just token names as strings. |
 | `src/lib/graph/types.ts` | `GraphNode` gains `hasChildren: boolean` (already known during `flatten`'s walk — `children.length > 0` — and needed to tell a leaf from a branch, which `leafCount` alone can't do: a node with exactly one leaf child and a childless leaf both have a `leafCount` of 1). `GraphSceneNode` gains `colourToken: string`, the resolved CSS custom property name for that node's fill. |
 | `src/lib/graph/tree.ts` | The `walk` sets `hasChildren` on each node as it's built. The depth-cap error message's wording changes to match the new rationale in `palette.ts`; the check itself (`depth > MAX_DEPTH`) is unchanged. |
 | `src/lib/graph/scene.ts` | `buildScene` calls the new colour assignment alongside `layout`, and reads each node's radius from the new three-way function instead of `radiusForDepth(node.depth)`. |
 | `src/app/graph/_components/graph-scene.tsx` | `SCENE_TOKENS` becomes a fixed list (hub + 8 branch + 8 leaf-tint tokens, plus the existing edge/page tokens) instead of one built from `MAX_DEPTH`. `applyTokens` reads `node.colourToken` directly off each node instead of computing `depthToken(node.depth)` — simpler than what it replaces, since the token name is now decided once, at build time, rather than re-derived per frame. |
 | `src/app/graph/_components/depth-key.tsx` → `branch-key.tsx` | Renamed and rewritten. Today's `DepthKey` needs no props — it reads a fixed, depth-only array straight from `palette.ts`. The new key's content depends on the actual seed (which ring topics exist and which colour each one was assigned), so it becomes a small presentational component that takes the ring-topic nodes as a prop instead of importing a static list. |
 | `src/app/graph/page.tsx` | Passes the ring-topic subset of `scene.nodes` (`depth === 1`) to the renamed key component, in place of today's prop-less `<DepthKey />`. |
-| `src/app/globals.css` | The `--graph-depth-0…4` tokens are replaced by `--graph-hub`, `--graph-branch-0…7`, and `--graph-branch-0…7-leaf` (§9.1), declared in all three existing scopes exactly as the depth ramp was. `--graph-edge` and `--graph-label-halo` are unchanged. |
-| `src/lib/graph/layout.test.ts`, `tree.test.ts` | **Amended in.** Tests asserting depth-scaled radii or reading `radiusForDepth` move to the new three-way radius rule; a new `colour.test.ts` covers the assignment algorithm (§11). |
+| `src/app/globals.css` | The `--graph-depth-0…4` tokens are replaced by `--graph-hub`, `--graph-branch-0…7`, and `--graph-branch-0…7-leaf` (§8.1), declared in all three existing scopes exactly as the depth ramp was. `--graph-edge` and `--graph-label-halo` are unchanged. |
+| `src/lib/graph/layout.test.ts`, `tree.test.ts` | **Amended in.** Tests asserting depth-scaled radii or reading `radiusForDepth` move to the new three-way radius rule; a new `colour.test.ts` covers the assignment algorithm (§10). |
 | `CLAUDE.md` | The `## Graph data` section's colour/size bullets are rewritten to describe group colour and has-children size in place of the depth ramp and depth-scaled radii; the depth-cap bullet's rationale is updated to match. |
 
 `src/lib/graph/**` stays framework-agnostic and CSS-value-free: `colour.ts` and the rewritten
@@ -208,21 +208,11 @@ rewrite of a small, already-isolated module, or a small edit to a file that alre
 colour is actually spelled out, exactly as the depth ramp already established. The seed
 schema (`schema.ts`) is untouched: colour and size are still never author-supplied, only
 derived, which is also what keeps a seed edit from ever being able to inject an arbitrary
-colour (§10).
+colour (§9).
 
-### 8. Non-functional requirements
+### 8. Design
 
-| ID | Requirement | Verification |
-| --- | --- | --- |
-| NFR-1 | Node count, edge count, draw-call count, and label-pool size are unchanged — this is a colour/size rule change, not a scale or rendering-pipeline change. | §11 |
-| NFR-2 | The eight branch colours, the one hub colour, and the eight leaf tints each clear the same computable accessibility checks (lightness, saturation, colour-vision-deficiency separation, contrast) the current depth ramp was checked against, run against this app's own background colours in both light and dark mode. | §11, V-8 |
-| NFR-3 | No leaf's colour is harder to see against the page than the least visible step of the ramp it replaces — this change must not add to the accessibility debt already recorded for the graph. | §11, V-8 |
-| NFR-4 | Colour and size stay a pure, deterministic function of the flattened seed, computed once at build time in the Server Component — no randomness, no per-node authoring in `seed.ts`. | §11 |
-| NFR-5 | Every non-functional requirement from the original graph spec and the ring-readability spec (frame rate, bundle size, CSP, no new server surface, resource disposal) continues to hold — nothing here touches the rendering pipeline, the dependency list, or the client/server boundary. | §11 |
-
-### 9. Design
-
-#### 9.1 Colour: from a five-step ramp to an eight-hue group palette
+#### 8.1 Colour: from a five-step ramp to an eight-hue group palette
 
 The current ramp (`--graph-depth-0…4`) is an **ordinal** encoding — one hue, getting lighter
 with depth — which is the right `dataviz` pattern for "how deep," but the wrong one for "which
@@ -281,7 +271,7 @@ All new tokens are declared in the three existing scopes (`:root`, the
 `--graph-depth-*` precedent exactly: not bridged into `@theme inline`, because none of this is
 a shadcn slot.
 
-#### 9.2 Assigning a colour to each node
+#### 8.2 Assigning a colour to each node
 
 A pure function over the already-flattened, pre-order node list (parents before children,
 same order `flatten` already produces):
@@ -313,9 +303,9 @@ its **own** hue rather than a shade of `RAG`'s, and those three leaves take *its
 `Protocols`'s; `A2A` (which has none) takes `Protocols`'s own leaf tint directly, because its
 nearest node-with-children is `Protocols` itself.
 
-#### 9.3 Why tree-adjacency is enough to guarantee screen-adjacency
+#### 8.3 Why tree-adjacency is enough to guarantee screen-adjacency
 
-Closing intent open question 2 (§3): "near," for the purpose of §9.2's collision rule, is
+Closing intent open question 2 (§3): "near," for the purpose of §8.2's collision rule, is
 defined purely on the tree — parent/child or shared parent — with no separate geometric check.
 This is safe because of an invariant the layout already has and already tests for a different
 reason: every branch's entire subtree is confined to its own slice of the picture and can
@@ -328,7 +318,7 @@ this spec (§7), so the inference stands, but it hasn't been independently re-co
 on the built result (Areas of concern, C-4 — see also C-5's general caution about numbers not
 yet looked at).
 
-#### 9.4 Size: from five depth-scaled radii to three
+#### 8.4 Size: from five depth-scaled radii to three
 
 `radiusForDepth(depth)` is replaced by a function of a node's own shape rather than its
 position in the tree: the root gets the hub radius, any other node with children gets the one
@@ -340,7 +330,7 @@ they call. Nothing about `layout.ts`'s geometry — shell distances, cone angles
 angle spiral — changes; a node's radius has never driven where it sits, only how big it's
 drawn once it's there, so this is a like-for-like swap at both call sites.
 
-#### 9.5 The key becomes data-dependent
+#### 8.5 The key becomes data-dependent
 
 Today's `DepthKey` is prop-less because a depth-to-colour mapping is a fixed, five-entry
 constant, unrelated to any particular seed. Once colour depends on the tree's actual shape,
@@ -349,7 +339,7 @@ importing a constant — a small, one-directional change (`page.tsx` already bui
 `scene` today; it now also passes its ring-topic subset to the renamed key component) rather
 than a new data flow.
 
-#### 9.6 What does not change
+#### 8.6 What does not change
 
 The camera, `layout.ts`'s geometry, the seed schema, the node and edge counts, the label
 layer, and the depth field itself (still computed, still used to find the ring for layout and
@@ -357,7 +347,7 @@ camera purposes) are all untouched. Depth stops being *read* for colour or size,
 removed from the data model — `layout.ts` and `graph-scene.tsx` still need it to find "the
 ring" (`depth === 1`) for the layout and camera-fence logic the ring-readability spec built.
 
-### 10. Security
+### 9. Security
 
 This change touches colour tokens, one new pure algorithm module, and one component's props —
 no data flow, no dependency, no environment variable, and no client/server boundary is
@@ -378,7 +368,7 @@ affected.
 Everything else in the original spec's security design (§8 of `ai-knowledge-graph-3d`'s
 spec.md) continues to apply unchanged.
 
-### 11. Verification
+### 10. Verification
 
 | # | Check | How | Pass |
 | --- | --- | --- | --- |
@@ -404,7 +394,7 @@ spec.md) continues to apply unchanged.
 only defines two accent colours; this feature needs eight that can all be told apart, so this
 spec borrows a ready-made, already-accessibility-checked set built for exactly this job rather
 than inventing six new brand colours. **Resolved here by using that borrowed set as-is** (§4,
-D-1; §9.1) — one of the eight is a close cousin of ProductDock's own blue, but the other seven
+D-1; §8.1) — one of the eight is a close cousin of ProductDock's own blue, but the other seven
 are not ProductDock colours at all, and they'll be the most visually prominent thing on the
 page. **The decision needed from you:** is shipping a non-brand colour set on the flagship
 graph page acceptable, or does this need a design/brand review before it ships?
@@ -434,7 +424,7 @@ that has not been independently confirmed against this app's own colours yet.** 
 colours in this design — the eight leaf tints — sit at the rim, exactly where a colour-vision-
 deficient viewer or a keyboard/screen-reader user (the subject of the separate, still-open
 accessibility work) already struggles most. This spec requires the same computable checks the
-current ramp passed to be re-run against this app's own colours before merge (§11, V-8, V-9),
+current ramp passed to be re-run against this app's own colours before merge (§10, V-8, V-9),
 the same gate the current ramp went through when it was built — but as of this document, that
 run hasn't happened yet. **No decision needed from you today** — this is flagged so the gate
 isn't quietly skipped between now and merge.
@@ -443,7 +433,7 @@ isn't quietly skipped between now and merge.
 hues survive validation against this app's own colours — are chosen the same "build it, look
 at it, then confirm" way the rest of this graph's tuned values have been, not proven on paper
 here.** This mirrors the previous graph spec's own admitted pattern (its Areas of concern,
-C-5): a testable rule is specified now (§9.1, §9.2, §11), but the literal colour values behind
+C-5): a testable rule is specified now (§8.1, §8.2, §10), but the literal colour values behind
 it are expected to move once someone has actually run the check and looked at the result.
 **The decision needed from you:** treat this spec's colour values as a first attempt due for a
 "build it, look at it" pass, not a final palette, the same way the ring layout's tuning
