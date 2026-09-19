@@ -11,25 +11,46 @@
 
 import type { GraphNode } from "@/lib/graph/types";
 
-/** The centre, in the highest-contrast ink on the page. Used nowhere else (FR-4). */
+/**
+ * The centre. Used nowhere else (FR-4), and - the part that is load-bearing rather
+ * than decorative - it has to separate from every hue a ring topic can take, because
+ * slot 0 is always handed to the first ring topic and that topic sits one edge away
+ * from the hub. It is checked against the ring four in `palette.contract.test.ts`.
+ */
 export const HUB_TOKEN = "--graph-hub";
+
+/**
+ * The darkest fraction of its own colour a node is ever drawn at: the scene lights
+ * the nodes, and the point facing away from the key light comes back at this much of
+ * the token value (the lit point comes back at exactly the token value - see
+ * `graph-scene.tsx`).
+ *
+ * It lives here, not with the renderer, because it is a *palette* fact: it sets the
+ * range of colours the picture actually contains, so both ends of it have to clear
+ * the validator, and the contract test reads this number to know what to check.
+ * Raising it flattens the shading; lowering it pushes the darkest hues out of the
+ * validated lightness band, which is measured and asserted rather than left to
+ * judgement.
+ */
+export const NODE_TERMINATOR = 0.76;
 
 /**
  * Eight hues, in a fixed order that is a safety mechanism rather than a preference.
  *
- * The values are the `dataviz` skill's own default categorical palette; the *order*
- * is this app's. A chart reads its palette adjacently - series 1 beside series 2 -
- * but this graph does not: the ring is a circle of topics on screen at once and
- * listed together in the key, so every ring topic has to separate from every other.
- * That is the validator's `--pairs all` case, and the documented order fails it at
- * the fourth topic (yellow against orange, normal-vision dE 10.6 in dark mode,
- * against a hard floor of 15). Re-ordering the same eight values clears every gate
- * in both modes - which is the fix the skill itself prescribes, since "the slot
- * ordering is the CVD-safety mechanism, not cosmetic".
+ * The values are the `dataviz` skill's default categorical palette, with two
+ * measured deviations recorded in `globals.css`; the *order* is this app's. A chart
+ * reads its palette adjacently - series 1 beside series 2 - but this graph does not:
+ * the ring is a circle of topics on screen at once and listed together in the key,
+ * so every ring topic has to separate from every other. That is the validator's
+ * `--pairs all` case, and the documented order fails it at the fourth topic (yellow
+ * against orange, normal-vision dE 10.6 in dark mode, against a hard floor of 15).
+ * Re-ordering the same eight values clears every gate in both modes - which is the
+ * fix the skill itself prescribes, since "the slot ordering is the CVD-safety
+ * mechanism, not cosmetic".
  *
- * Measured against this app's own surfaces (#ffffff, #0a0c0e), both modes: all eight
- * pass adjacent; the first four pass all-pairs. Re-run `validate_palette.js` if a
- * value or this order is edited - see globals.css and spec §8.1.
+ * Editing a value or this order does not need anyone to remember to re-run anything:
+ * `palette.contract.test.ts` reads `globals.css` and runs those checks over both
+ * themes and both ends of the scene's shading range.
  */
 export const HUE_COUNT = 8;
 
@@ -101,7 +122,8 @@ export function assignColours(nodes: GraphNode[]): Map<string, string> {
     // sibling has taken. Ring topics are all siblings under the root, so this one
     // rule is also what keeps every ring topic distinct - no ring-specific case.
     let slot = 0;
-    while (slot < HUE_COUNT && (slot === parentSlot || taken.has(slot))) slot += 1;
+    while (slot < HUE_COUNT && (slot === parentSlot || taken.has(slot)))
+      slot += 1;
     // Past eight distinct neighbours there is nothing left to pick that is not
     // already in use nearby; wrapping keeps the tree renderable, and the ring - the
     // one place where every group is visible at once - tops out at four long before

@@ -2,14 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  AmbientLight,
   BufferGeometry,
+  CircleGeometry,
   Color,
+  DirectionalLight,
   Float32BufferAttribute,
   Fog,
   InstancedMesh,
   LineBasicMaterial,
   LineSegments,
   MeshBasicMaterial,
+  MeshLambertMaterial,
   Object3D,
   PerspectiveCamera,
   Raycaster,
@@ -21,7 +25,12 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
-import { HUB_TOKEN, HUE_COUNT, hueToken } from "@/lib/graph/colour";
+import {
+  HUB_TOKEN,
+  HUE_COUNT,
+  hueToken,
+  NODE_TERMINATOR,
+} from "@/lib/graph/colour";
 import type { GraphScene } from "@/lib/graph/types";
 import {
   declutter,
@@ -38,7 +47,13 @@ import { UnsupportedNotice } from "./unsupported-notice";
  * the properties they have to satisfy are asserted in the tests, which do not
  * depend on which numbers these are.
  */
-const CAMERA_FOV = 50;
+/**
+ * Wide on purpose. Perspective convergence - the thing that makes a still frame
+ * read as a space rather than as a diagram - is a function of fov, and at the 50
+ * this started on the graph is far enough away that near and far nodes are drawn
+ * at almost the same scale. Past about 70 the edges of the frame start to stretch.
+ */
+const CAMERA_FOV = 62;
 /** Breathing room left around the graph once it has been fitted to the frame. */
 const OVERVIEW_MARGIN = 1.06;
 /**
@@ -53,6 +68,61 @@ const FOG_NEAR = 0.75;
 const FOG_FAR = 2.2;
 const LABEL_NEAR = 0.55;
 const LABEL_FAR = 1.8;
+/**
+ * The ground plane under the graph (`intent/graph-depth-on-first-load/`). A still
+ * frame of unlit circles on a flat page is a 2D diagram until you drag it: nothing
+ * in it converges, so nothing says there is a third axis. A polar grid drawn on one
+ * horizontal plane says it in perspective alone - its circles are ellipses and its
+ * spokes converge - and it says it without touching a node colour, which a lit
+ * material would (see the note on `nodeMaterial`).
+ *
+ * Polar rather than square because the layout is a hub and a ring: the circles are
+ * the shells and the spokes meet at the hub, so the grid reads as the graph's own
+ * floor rather than as graph paper it happens to sit on.
+ */
+const FLOOR_RINGS = 6;
+const FLOOR_SPOKES = 16;
+const FLOOR_SEGMENTS = 128;
+/** How much wider than its node a floor mark is drawn. */
+const SHADOW_SPREAD = 1.35;
+/** How far the floor reaches past the outermost node, and how far it sits below. */
+const FLOOR_MARGIN = 1.18;
+const FLOOR_DROP = 0.22;
+/**
+ * The opening sweep. The floor makes the scene *look* three-dimensional in a still
+ * frame; a few degrees of azimuth on load makes it *behave* three-dimensional -
+ * parallax between the near and far halves of the tree is the cue nothing static
+ * can give. It ends on exactly the framing the overview would have had, so this
+ * changes where the camera starts, never where it settles, and a viewer who grabs
+ * the canvas takes over mid-sweep.
+ */
+/**
+ * The lighting, calibrated rather than chosen: `AMBIENT + KEY === 1`, so the point
+ * of a node facing the key light comes out at *exactly* its token colour and the
+ * shading only ever darkens from there, bottoming out at `NODE_TERMINATOR` of it on
+ * the terminator - a palette number, which is why it lives in `lib/graph/colour.ts`
+ * and is checked by `palette.contract.test.ts` at both ends. That is what makes this compatible with the palette the ramp
+ * validator passed (spec §7.4): the hue never moves, the brightest region of each
+ * circle is the validated value, and every shaded pixel moves *away* from the page
+ * in both themes, so contrast only improves. Without it the nodes are flat discs
+ * and no amount of backdrop makes the scene read as 3D.
+ */
+const AMBIENT = NODE_TERMINATOR;
+const KEY = 1 - AMBIENT;
+/**
+ * Lambert's BRDF divides by pi, and three's lights carry no compensating factor
+ * since the legacy lighting path was removed - so intensities that sum to 1 render
+ * every node at 1/pi of its albedo. Measured off a screenshot before this was
+ * here: the hub's #2a78d6 came out #244f77, its yellow #c98500 came out #86601e.
+ * Not a tuning value. It is the number that makes AMBIENT + KEY mean what the
+ * comment above says it means.
+ */
+const LAMBERT_PI = Math.PI;
+/** Nudges the key off the view axis, so the terminator is never a concentric ring. */
+const KEY_OFFSET = new Vector3(-0.35, 0, 0.2);
+
+const INTRO_MS = 2400;
+const INTRO_SWEEP = (16 * Math.PI) / 180;
 /**
  * The polar band the camera is fenced into (spec FR-6, NFR-2, §9.3): always looking
  * somewhat down onto the ring. `MIN_POLAR` keeps it away from the ring's axis, where
@@ -91,7 +161,9 @@ const SCENE_TOKENS = [
   HUB_TOKEN,
   ...Array.from({ length: HUE_COUNT }, (_, slot) => hueToken(slot)),
   "--graph-edge",
-  "--page",
+  "--graph-floor",
+  "--graph-shadow",
+  "--graph-space-near",
 ] as const;
 
 /**
@@ -136,7 +208,11 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     const ringNodes = nodes.filter((node) => node.depth === 1);
 
     // ---- renderer, camera, controls -------------------------------------------
-    const renderer = new WebGLRenderer({ antialias: true, alpha: false });
+    // Transparent, so the container's CSS gradient is the scene's backdrop. A
+    // solid clear colour is the one thing that cannot give the frame depth: every
+    // pixel that is not a node comes out the same.
+    const renderer = new WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setClearAlpha(0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     const canvas = renderer.domElement;
     canvas.style.display = "block";
@@ -187,11 +263,23 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     controls.minPolarAngle = MIN_POLAR;
     controls.maxPolarAngle = MAX_POLAR;
 
+    // ---- lights ---------------------------------------------------------------
+    // A key light that rides the camera, offset up and to the left of it. Fixed in
+    // world space, half the graph faces away and comes back evenly lit - flat
+    // discs again, just darker ones - and which half depends on where the viewer
+    // has orbited to. Riding the camera means every node shows a terminator from
+    // every angle. Its position is written per frame, in `renderFrame`.
+    const ambientLight = new AmbientLight(0xffffff, AMBIENT * LAMBERT_PI);
+    const keyLight = new DirectionalLight(0xffffff, KEY * LAMBERT_PI);
+    world.add(ambientLight, keyLight);
+
     // ---- nodes: one InstancedMesh, one draw call (NFR-2) ----------------------
-    // Unlit, so the pixel colour is the token colour: a lit material would shade
-    // every node away from the value the ramp validator passed (spec §7.4).
-    const nodeGeometry = new SphereGeometry(1, 16, 12);
-    const nodeMaterial = new MeshBasicMaterial({ fog: true });
+    // Lambert, not basic: see AMBIENT/KEY above for why shading this does not move
+    // a node off the value the ramp validator passed (spec §7.4). Lambert rather
+    // than standard because there is no specular highlight to earn here and a
+    // highlight would be a second, uncalibrated colour on every node.
+    const nodeGeometry = new SphereGeometry(1, 32, 24);
+    const nodeMaterial = new MeshLambertMaterial({ fog: true });
     const nodeMesh = new InstancedMesh(
       nodeGeometry,
       nodeMaterial,
@@ -232,20 +320,120 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     const edgeLines = new LineSegments(edgeGeometry, edgeMaterial);
     world.add(edgeLines);
 
+    // ---- floor: the depth cue, one more draw call -----------------------------
+    // Sized from the node positions, not from the layout's constants: `lib/graph`
+    // keeps those to itself, so tightening the tree moves the floor with it.
+    let floorY = 0;
+    let floorRadius = 0;
+    for (const node of nodes) {
+      floorY = Math.min(floorY, node.position[1] - node.radius);
+      floorRadius = Math.max(
+        floorRadius,
+        Math.hypot(node.position[0], node.position[2]) + node.radius,
+      );
+    }
+    floorY -= sceneRadius * FLOOR_DROP;
+    floorRadius *= FLOOR_MARGIN;
+
+    const floorVertices: number[] = [];
+    for (let ring = 1; ring <= FLOOR_RINGS; ring += 1) {
+      const radius = (floorRadius * ring) / FLOOR_RINGS;
+      for (let step = 0; step < FLOOR_SEGMENTS; step += 1) {
+        const from = (step / FLOOR_SEGMENTS) * Math.PI * 2;
+        const to = ((step + 1) / FLOOR_SEGMENTS) * Math.PI * 2;
+        floorVertices.push(
+          Math.cos(from) * radius,
+          floorY,
+          Math.sin(from) * radius,
+          Math.cos(to) * radius,
+          floorY,
+          Math.sin(to) * radius,
+        );
+      }
+    }
+    for (let spoke = 0; spoke < FLOOR_SPOKES; spoke += 1) {
+      const angle = (spoke / FLOOR_SPOKES) * Math.PI * 2;
+      floorVertices.push(
+        0,
+        floorY,
+        0,
+        Math.cos(angle) * floorRadius,
+        floorY,
+        Math.sin(angle) * floorRadius,
+      );
+    }
+    // A stem from the hub and from each ring topic down to the floor. Five lines,
+    // and they are what turns the floor from a backdrop into a plane the graph is
+    // standing *on*: the height they measure is only visible in perspective.
+    const hubNode = nodes.find((node) => node.parentId === null);
+    for (const node of hubNode ? [hubNode, ...ringNodes] : ringNodes) {
+      floorVertices.push(
+        node.position[0],
+        node.position[1],
+        node.position[2],
+        node.position[0],
+        floorY,
+        node.position[2],
+      );
+    }
+
+    const floorGeometry = new BufferGeometry();
+    floorGeometry.setAttribute(
+      "position",
+      new Float32BufferAttribute(floorVertices, 3),
+    );
+    const floorMaterial = new LineBasicMaterial({ fog: true });
+    const floorLines = new LineSegments(floorGeometry, floorMaterial);
+    // The floor is decoration, not content: it must never be what a screen reader
+    // or the picker finds, and the picker only ever tests `nodeMesh`.
+    floorLines.renderOrder = -1;
+    world.add(floorLines);
+
+    // A disc on the floor under every node. Of all the cues here this is the one
+    // that carries the most: the grid says "there is a plane", and the discs say
+    // how far above it each node is - the gap between a node and its own mark is
+    // height, and it is readable without moving the camera. Unlit and flat, so it
+    // costs one draw call and no shadow map.
+    const shadowGeometry = new CircleGeometry(1, 24);
+    // Built facing +Y once, rather than rotating 148 instance matrices.
+    shadowGeometry.rotateX(-Math.PI / 2);
+    const shadowMaterial = new MeshBasicMaterial({ fog: true });
+    const shadowMesh = new InstancedMesh(
+      shadowGeometry,
+      shadowMaterial,
+      nodes.length,
+    );
+    nodes.forEach((node, index) => {
+      dummy.position.set(node.position[0], floorY, node.position[2]);
+      // Wider than the node: a hard disc the size of the sphere reads as a second
+      // node lying on the floor rather than as the mark one casts.
+      dummy.scale.setScalar(node.radius * SHADOW_SPREAD);
+      dummy.updateMatrix();
+      shadowMesh.setMatrixAt(index, dummy.matrix);
+    });
+    shadowMesh.instanceMatrix.needsUpdate = true;
+    shadowMesh.renderOrder = -1;
+    world.add(shadowMesh);
+
     // ---- colour, re-read from the DOM on every theme change -------------------
     const colour = new Color();
     function applyTokens() {
       const current = tokensRef.current;
-      const page = current["--page"];
-      if (page) {
-        colour.set(page);
-        renderer.setClearColor(colour, 1);
-        // Fog is the page colour exactly, so distant nodes recede into the surface
-        // rather than into a haze of some other hue (spec §7.4, R-11).
-        fog.color.copy(colour);
+      const backdrop = current["--graph-space-near"];
+      if (backdrop) {
+        // Fog is the backdrop's colour *at the vanishing point* exactly - that is
+        // where a node far enough away to be fogged sits on screen - so distant
+        // nodes recede into the surface rather than into a haze of some other hue
+        // (spec §7.4, R-11). Not the page colour any more: in dark mode the
+        // gradient's middle is lighter than the page.
+        fog.color.set(backdrop);
       }
       const edgeColour = current["--graph-edge"];
       if (edgeColour) edgeMaterial.color.set(edgeColour);
+      const floorColour = current["--graph-floor"];
+      if (floorColour) floorMaterial.color.set(floorColour);
+      const shadowColour = current["--graph-shadow"];
+      if (shadowColour) shadowMaterial.color.set(shadowColour);
 
       nodes.forEach((node, index) => {
         // The token name was decided once, at build time, rather than re-derived
@@ -331,6 +519,43 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         return;
       }
       camera.position.multiplyScalar(MIN_ORBIT_DISTANCE / distance);
+    }
+
+    /**
+     * The opening sweep. It only ever rotates the *starting* position back onto
+     * where the camera was going to be anyway, so the view it lands on is the one
+     * `overviewDistance` framed. Cancelled - not reversed - the moment the viewer
+     * touches the canvas or a fly-to takes the camera, because two things moving
+     * the camera at once is a fight the viewer loses.
+     */
+    let introStartedAt: number | null = null;
+    const introBase = new Vector3();
+    /**
+     * The sweep starts from a different azimuth, and the graph is wide enough that
+     * the distance which frames it from one angle crops it from another - so the
+     * distance is fitted at both ends and interpolated, rather than carried over.
+     */
+    let introFromDistance = 0;
+    let introToDistance = 0;
+
+    function stopIntro() {
+      introStartedAt = null;
+    }
+
+    function stepIntro(now: number): boolean {
+      if (introStartedAt === null) return false;
+      const t = Math.min(1, (now - introStartedAt) / INTRO_MS);
+      // Smoothstep: the sweep has to start and end at a standstill, or the load
+      // reads as a jerk rather than as the scene settling.
+      const eased = t * t * (3 - 2 * t);
+      camera.position
+        .copy(introBase)
+        .applyAxisAngle(WORLD_UP, INTRO_SWEEP * (eased - 1))
+        .setLength(
+          introFromDistance + (introToDistance - introFromDistance) * eased,
+        );
+      if (t >= 1) introStartedAt = null;
+      return introStartedAt !== null;
     }
 
     function stepCamera(now: number): boolean {
@@ -421,11 +646,24 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       lastFrameAt = now;
 
       inFrame = true;
+      const introMoving = stepIntro(now);
       const cameraMoving = stepCamera(now);
       const scalesMoving = stepScales(deltaMs);
       // Returns true while damping is still settling.
       const dampingMoving = controls.update();
       keepOutsideRing();
+
+      // Only the direction matters for a directional light, so this is a position
+      // relative to the target, not a place in the world.
+      keyLight.position
+        .copy(camera.position)
+        .sub(controls.target)
+        .normalize()
+        .addScaledVector(WORLD_UP, 0.85)
+        .add(KEY_OFFSET)
+        .add(controls.target);
+      keyLight.target.position.copy(controls.target);
+      keyLight.target.updateMatrixWorld();
 
       const viewDistance = camera.position.distanceTo(controls.target);
       fog.near = viewDistance * FOG_NEAR;
@@ -437,7 +675,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
 
       // The only place the next frame is scheduled: whether one is needed is a
       // question about the animations, not about how many events fired.
-      if (cameraMoving || scalesMoving || dampingMoving) invalidate();
+      if (introMoving || cameraMoving || scalesMoving || dampingMoving) {
+        invalidate();
+      }
     }
 
     /**
@@ -492,6 +732,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       // a fly-to that also spins the graph loses them.
       if (direction.lengthSq() === 0) direction.set(0, 0.35, 1).normalize();
 
+      stopIntro();
       cameraTween = {
         startedAt: performance.now(),
         tween: createTween(),
@@ -584,6 +825,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     function onPointerDown(event: PointerEvent) {
+      stopIntro();
       pressedAt = { x: event.clientX, y: event.clientY };
     }
 
@@ -639,6 +881,23 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     camera.position
       .copy(openingDirection)
       .multiplyScalar(overviewDistance(openingDirection));
+    introBase.copy(camera.position);
+    // Reduced motion gets the floor and the still frame it already reads as 3D
+    // from, and none of the sweep.
+    const stillness = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (!stillness.matches) {
+      const introDirection = openingDirection
+        .clone()
+        .applyAxisAngle(WORLD_UP, -INTRO_SWEEP);
+      introToDistance = camera.position.length();
+      introFromDistance = overviewDistance(introDirection);
+      introStartedAt = performance.now();
+      camera.position.copy(introDirection).setLength(introFromDistance);
+    }
+    // A wheel or a touch that OrbitControls handles itself never reaches
+    // `onPointerDown`, so the controls' own "the viewer is driving" event is the
+    // one that has to end the sweep.
+    controls.addEventListener("start", stopIntro);
     invalidate();
 
     // ---- teardown (R-12, V-19) -------------------------------------------------
@@ -655,6 +914,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
       controls.removeEventListener("change", invalidate);
+      controls.removeEventListener("start", stopIntro);
       controls.dispose();
 
       nodeGeometry.dispose();
@@ -662,6 +922,11 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       nodeMesh.dispose();
       edgeGeometry.dispose();
       edgeMaterial.dispose();
+      floorGeometry.dispose();
+      floorMaterial.dispose();
+      shadowGeometry.dispose();
+      shadowMaterial.dispose();
+      shadowMesh.dispose();
       world.clear();
 
       renderer.dispose();
@@ -686,7 +951,10 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     scene.nodes.find((node) => node.id === focusedId)?.name ?? null;
 
   return (
-    <div ref={containerRef} className="relative flex-1 overflow-hidden">
+    <div
+      ref={containerRef}
+      className="graph-space relative flex-1 overflow-hidden"
+    >
       <GraphLabels ref={labelsRef} />
       {/* The focused node is React state rather than a plain ref because this
           line re-renders with it. The effect reads `focusedIdRef`, so flying to a

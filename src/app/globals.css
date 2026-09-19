@@ -36,7 +36,6 @@
   --accent-secondary: #ea592a;
   --accent-secondary-hover: #c44821;
 
-
   /* Group palette for the /graph scene (graph-branch-colour-and-size spec §8.1).
      Colour says which group a node belongs to, never how deep it sits, so this is
      a *categorical* set — a fixed order of distinct hues — where the old
@@ -44,41 +43,75 @@
      unchanged; there is no lighter "leaf" step, because the eight hues already
      span the validated lightness band and there is nothing left to step into.
 
-     The values are the `dataviz` skill's own default categorical palette. The
-     ORDER is ours, and it is a safety mechanism rather than a preference: a chart
-     reads its palette adjacently, but this graph's ring is a circle of topics all
-     on screen at once, so every ring topic must separate from every other — the
-     validator's --pairs all case, which the documented order fails at the fourth
-     topic. Re-order or re-value anything here and validate_palette.js has to be
-     re-run against BOTH surfaces, adjacent for all eight and --pairs all for the
-     first four.
+     The values are the `dataviz` skill's default categorical palette with two
+     measured deviations, both in the light column, both recorded here because the
+     provenance claim is otherwise no longer true:
+       · violet #4a3aa7 → #5546b5. The original sits exactly on the band's L floor
+         (0.43), so it has no headroom to be shaded into: the scene lights the nodes
+         and the shaded end fell to L 0.38.
+       · orange #eb6834 → #db5824. The original clears 3:1 against the page by 0.16
+         and fell under it against the backdrop gradient's outer colour, widening
+         the relief obligation from three hues to four.
 
-     Measured (surfaces #ffffff / #0a0c0e, both modes): all eight pass adjacent;
-     the first four pass all-pairs. Magenta, yellow and aqua sit below 3:1 against
-     the light page and the fourth ring pair sits in the 6–8 CVD band — both carry
-     the validator's relief obligation, which the scene's labels and the header key
-     supply. That makes them load-bearing, not decorative.
+     The ORDER is ours, and it is a safety mechanism rather than a preference: a
+     chart reads its palette adjacently, but this graph's ring is a circle of topics
+     all on screen at once, so every ring topic must separate from every other — the
+     validator's --pairs all case, which the documented order fails at the fourth
+     topic.
+
+     None of the above is enforced by remembering it. `palette.contract.test.ts`
+     reads THIS FILE and runs the checks over both themes, at both ends of the
+     shading range the lit scene draws, including the hub against all four ring
+     hues. Change a value and the test tells you which gate moved.
+
+     What the checks currently allow: magenta, yellow and aqua sit below 3:1
+     against both ends of the light backdrop, and the fourth ring pair sits in the
+     6–8 CVD band. Both are legal only with the validator's relief — visible labels
+     — which the scene's label layer and the header key supply together. That makes
+     those two surfaces load-bearing for accessibility, not decorative.
 
      Deliberately not bridged into @theme inline: these are not shadcn slots,
      following the --accent-secondary precedent above. */
-  --graph-hub: var(--text-primary);
+  /* The hub, and the one node that must never be mistaken for a branch. It is
+     ProductDock's blue, but NOT the brand's #027ac2: slot 0 below is always handed
+     to the first ring topic, which sits one edge away from the hub, and #027ac2
+     against that blue measures ΔE 3.6 under normal vision against a floor of 15 —
+     indistinguishable. Darkened here and lightened in the dark scopes to clear it;
+     asserted in palette.contract.test.ts, which is what stopped it the last time. */
+  --graph-hub: #01547f;
   --graph-branch-0: #2a78d6; /* blue */
   --graph-branch-1: #008300; /* green */
   --graph-branch-2: #e87ba4; /* magenta */
   --graph-branch-3: #eda100; /* yellow */
   --graph-branch-4: #1baf7a; /* aqua */
-  --graph-branch-5: #eb6834; /* orange */
-  --graph-branch-6: #4a3aa7; /* violet */
+  --graph-branch-5: #db5824; /* orange */
+  --graph-branch-6: #5546b5; /* violet */
   --graph-branch-7: #e34948; /* red */
 
-  /* Its own opaque hex per scope rather than an alias of --gridline: THREE.Color
-     cannot parse a functional rgb() with an alpha channel, which is what
-     --gridline carries in dark mode. This value matches how the aliased one
-     renders over --page. */
-  --graph-edge: #e5e7eb;
-  --graph-label-halo: var(--page);
+  /* The scene's non-content ink, as an ordered ramp: quieter the less it means.
+     shadow < floor < edge < every node, measured as contrast against the backdrop
+     and asserted in palette.contract.test.ts. An edge is content — it is how the
+     shape of the tree is read — and the floor and its marks are depth cues, so a
+     floor louder than an edge turns the picture into a diagram drawn on graph
+     paper. That is not a matter of taste and it is not eyeballed.
 
-  --font-sans: var(--font-poppins), system-ui, -apple-system, "Segoe UI", sans-serif;
+     Each carries its own opaque hex per scope rather than aliasing --gridline:
+     THREE.Color cannot parse the functional rgb() with an alpha channel that
+     --gridline uses in dark mode. */
+  --graph-edge: #c3c9d1;
+  --graph-floor: #c8d4e1;
+  --graph-shadow: #e5ebf2;
+  /* The two ends of the scene's backdrop gradient (see .graph-space below).
+     --graph-space-near is the colour at the vanishing point, which is where
+     distant nodes end up, so it is also what the scene's fog fades into — the
+     two must stay equal or far nodes dissolve into a halo of the wrong hue.
+     In light it is the page itself; the depth comes from the outer colour. */
+  --graph-space-near: var(--page);
+  --graph-space-far: #dfe6ee;
+  --graph-label-halo: var(--graph-space-near);
+
+  --font-sans:
+    var(--font-poppins), system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 /* Dark values declared under both the media query and [data-theme], so an
@@ -100,16 +133,22 @@
     /* Re-stepped for the dark surface, not mirrored (spec NFR-6): a literal
        mirror of the light column also passes the validator, but at 2.07:1
        against the 2.0 light-end floor where this one gets 2.68:1. */
-  --graph-hub: var(--text-primary);
-  --graph-branch-0: #3987e5; /* blue */
-  --graph-branch-1: #008300; /* green */
-  --graph-branch-2: #d55181; /* magenta */
-  --graph-branch-3: #c98500; /* yellow */
-  --graph-branch-4: #199e70; /* aqua */
-  --graph-branch-5: #d95926; /* orange */
-  --graph-branch-6: #9085e9; /* violet */
-  --graph-branch-7: #e66767; /* red */
+    --graph-hub: #8fd0f5; /* ProductDock brand blue, lightened - see below */
+    --graph-branch-0: #3987e5; /* blue */
+    --graph-branch-1: #008300; /* green */
+    --graph-branch-2: #d55181; /* magenta */
+    --graph-branch-3: #c98500; /* yellow */
+    --graph-branch-4: #199e70; /* aqua */
+    --graph-branch-5: #d95926; /* orange */
+    --graph-branch-6: #9085e9; /* violet */
+    --graph-branch-7: #e66767; /* red */
     --graph-edge: #2a2f35;
+    --graph-floor: #252c34;
+    --graph-shadow: #0d1116;
+    /* Inverted against light on purpose: the page is already near-black, so
+       darkening the edges buys no depth. The light sits behind the hub. */
+    --graph-space-near: #151b22;
+    --graph-space-far: #05070a;
   }
 }
 
@@ -126,7 +165,7 @@
   /* Re-stepped for the dark surface, not mirrored (spec NFR-6): a literal
      mirror of the light column also passes the validator, but at 2.07:1
      against the 2.0 light-end floor where this one gets 2.68:1. */
-  --graph-hub: var(--text-primary);
+  --graph-hub: #8fd0f5; /* ProductDock brand blue, lightened - see below */
   --graph-branch-0: #3987e5; /* blue */
   --graph-branch-1: #008300; /* green */
   --graph-branch-2: #d55181; /* magenta */
@@ -136,6 +175,10 @@
   --graph-branch-6: #9085e9; /* violet */
   --graph-branch-7: #e66767; /* red */
   --graph-edge: #2a2f35;
+  --graph-floor: #252c34;
+  --graph-shadow: #0d1116;
+  --graph-space-near: #151b22;
+  --graph-space-far: #05070a;
 }
 
 /* Bridges the role-named tokens above onto the semantic names the vendored
@@ -198,4 +241,26 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/*
+ * The scene's backdrop (`intent/graph-depth-on-first-load/`). The canvas itself is
+ * transparent and this sits behind it, because a gradient is a two-triangle
+ * fullscreen pass in WebGL and a single declaration in CSS.
+ *
+ * A flat fill gives the eye nothing to read distance against: every pixel that is
+ * not a node is the same colour, so the graph reads as a diagram printed on the
+ * page. A gradient centred near the vanishing point makes the middle of the frame
+ * recede, and the floor grid crossing it picks up the change along its length.
+ *
+ * Contrast only improves: the outer colour moves *away* from every node hue in
+ * both themes, so the ramp validator's numbers against --page stay the floor
+ * rather than the ceiling.
+ */
+.graph-space {
+  background: radial-gradient(
+    125% 95% at 50% 42%,
+    var(--graph-space-near) 0%,
+    var(--graph-space-far) 100%
+  );
 }
