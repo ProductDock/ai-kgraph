@@ -33,8 +33,10 @@ export const MAX_DEPTH = 4;
  * `GROUP_RADIUS` is bounded by the layout, not by taste: `layout.test.ts` floors
  * every node pair's centre distance at 2.5x the larger radius, and deep groups - which
  * used to take the *smallest* radii - now take this one. Measured against the real
- * layout, the closest pair involving a group sits 5.98 apart in the 148-node synthetic
- * seed, so anything past ~2.39 fails that test. 1.05 clears it by more than 2x.
+ * layout, the closest pair involving a group sits 3.59 apart in the 148-node synthetic
+ * seed, so anything past ~1.44 fails that test. 1.05 clears it by ~1.37x. Those two
+ * distances scale with `RING_RADIUS`/`SHELL_GAP` and this radius does not, so
+ * tightening the layout again moves the ceiling, not this number.
  */
 export const HUB_RADIUS = 2.6;
 export const GROUP_RADIUS = 1.05;

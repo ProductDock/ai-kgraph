@@ -65,8 +65,14 @@ const MIN_POLAR = Math.PI * 0.18;
 const MAX_POLAR = Math.PI * 0.36;
 /** Inside the band, tilted rather than parked at either edge of it (spec §9.4). */
 const OPENING_POLAR = Math.PI * 0.3;
-/** Multiples of the ring's own radius: how close the camera may ever get. */
-const RING_CLEARANCE = 1.15;
+/**
+ * How close the camera may ever get to the origin, in world units. An absolute
+ * number rather than a multiple of the ring's radius: the tighter-spacing change
+ * shrank the ring, and a fence derived from it would have shrunk too, letting the
+ * viewer back inside the middle the fence exists to keep them out of (FR-7). This
+ * is the value that derivation produced before the tree was tightened, kept.
+ */
+const MIN_ORBIT_DISTANCE = 23;
 const HOVER_SCALE = 1.3;
 const HOVER_MS = 120;
 const FOCUS_SCALE = 1.2;
@@ -125,17 +131,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     const { nodes, edges } = scene;
     const indexById = new Map(nodes.map((node, index) => [node.id, index]));
     const sceneRadius = scene.radius || 1;
-    // Read off the positions the server already sent rather than re-derived from
-    // the layout's constants - `lib/graph` keeps its numbers to itself, and the
-    // client only ever received positions (spec §7.6). The fallback matters only
-    // for a hypothetical seed with no depth-1 node at all.
+    // The ring, for the opening azimuth only - `lib/graph` keeps its numbers to
+    // itself and the client only ever received positions (spec §7.6).
     const ringNodes = nodes.filter((node) => node.depth === 1);
-    const ringRadius =
-      ringNodes.reduce(
-        (max, node) => Math.max(max, Math.hypot(...node.position)),
-        0,
-      ) || sceneRadius * 0.5;
-    const minOrbitDistance = ringRadius * RING_CLEARANCE;
 
     // ---- renderer, camera, controls -------------------------------------------
     const renderer = new WebGLRenderer({ antialias: true, alpha: false });
@@ -182,9 +180,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     // Panning is not in the intent and it is the fastest way to lose the graph
     // off-screen (FR-6).
     controls.enablePan = false;
-    // Keyed to the ring rather than to the whole scene, so "cannot fly into the
-    // middle" holds however the scene is scaled (spec NFR-3, §9.3).
-    controls.minDistance = minOrbitDistance;
+    // Fixed rather than keyed to the scene's size, so "cannot fly into the middle"
+    // stays put when the layout is tightened (spec NFR-3, §9.3).
+    controls.minDistance = MIN_ORBIT_DISTANCE;
     controls.maxDistance = sceneRadius * 5;
     controls.minPolarAngle = MIN_POLAR;
     controls.maxPolarAngle = MAX_POLAR;
@@ -325,14 +323,14 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      */
     function keepOutsideRing() {
       const distance = camera.position.length();
-      if (distance >= minOrbitDistance) return;
+      if (distance >= MIN_ORBIT_DISTANCE) return;
       if (distance === 0) {
         // Unreachable in practice, but scaling a zero-length vector is a NaN
         // camera and a blank canvas, so it is handled rather than trusted.
-        camera.position.set(0, minOrbitDistance, 0);
+        camera.position.set(0, MIN_ORBIT_DISTANCE, 0);
         return;
       }
-      camera.position.multiplyScalar(minOrbitDistance / distance);
+      camera.position.multiplyScalar(MIN_ORBIT_DISTANCE / distance);
     }
 
     function stepCamera(now: number): boolean {
@@ -469,7 +467,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       const up = new Vector3().crossVectors(right, forward).normalize();
 
       const point = new Vector3();
-      let distance = minOrbitDistance;
+      let distance = MIN_ORBIT_DISTANCE;
       for (const node of nodes) {
         point.set(...node.position);
         // Behind the target counts as negative depth, which correctly *reduces*
