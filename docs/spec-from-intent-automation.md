@@ -110,6 +110,17 @@ section into the PR body and, when it is not `None.`, adds a `needs-policy-owner
 label. That is lesson 3, step 4: concerns go to policy owners *before* engineering is
 involved.
 
+### The PR is announced, because it waits on one person
+
+A spec PR blocks on a named product owner reading it, and nothing else in the pipeline
+tells them it exists. So the workflow posts the PR URL to `SLACK_WEBHOOK_URL` if that
+secret is set, prefixed with a warning when `needs-policy-owner` was applied — a spec
+with unresolved concerns is the one most worth reading early.
+
+That pairs with `plan-ready`, which posts when the same spec is *approved*. Between
+them the channel sees both ends of gate 2: it opened, and it cleared. The notification
+is best effort — an unset webhook logs a notice and the spec PR still exists.
+
 ## Prerequisites
 
 - `ANTHROPIC_API_KEY` as a repository secret — or the Bedrock / Vertex AI / Microsoft
@@ -119,6 +130,8 @@ involved.
   Without them the prompt has nothing to constrain it and the spec will be generic —
   this is the one prerequisite lesson 3 names explicitly.
 - Labels `spec`, `needs-po-review`, `needs-policy-owner`.
+- Optional: `SLACK_WEBHOOK_URL` as a repository secret, to announce the spec PR. Shared
+  with `plan-ready`; without it the workflow logs a notice and carries on.
 - Repository setting: *Allow GitHub Actions to create and approve pull requests*.
 
 ## Guardrails worth adding next
