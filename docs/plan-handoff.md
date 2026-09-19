@@ -46,14 +46,42 @@ budget before it exists.
   engineer runs /plan-from-spec <slug>    (.claude/skills/plan-from-spec/SKILL.md)
         ├─ refuses unless the session is in plan mode
         ├─ loads intent.md + spec.md + CLAUDE.md, reads the code first
-        ├─ writes files / sequence / risks / proof
+        ├─ writes files / sequence / risks / proof / handoff
         ├─ interrogates: what breaks, riskiest step, rollback, open questions
-        └─ commits intent/<slug>/plan.md  ← and stops there, handing back to the engineer
+        ├─ commits intent/<slug>/plan.md on branch plan/<slug>   ← NO pull request
+        └─ stops, and asks the engineer to read the plan
+        │
+        ▼
+  engineer reads intent/<slug>/plan.md                      = the review that matters
+        │
+        ▼
+  engineer starts a NEW session, choosing a model for the build   = STAGE 4
+        ├─ builds from plan.md, not from the planning conversation
+        ├─ runs the plan's own Proof section
+        └─ stops and ASKS whether to open the PR
+        │
+        ▼
+  human says yes → PR "plan + <type>: <what was built>"     = carries plan.md + the code
 ```
 
-The skill ends at that commit. Implementation is a separate session the engineer starts
-once they have read the plan — the pause between the two *is* the approval, so the plan
-session never rolls on into building, and never asks to.
+The skill ends at that commit and that request. Implementation is a separate session the
+engineer starts once they have read the plan — the pause between the two *is* the
+approval, so the plan session never rolls on into building, and never asks to.
+
+**Three things are deliberately not automatic**, and each one is a place an agent would
+otherwise remove a human decision:
+
+1. **The plan gets no PR of its own.** It is reviewed by a person opening the file. It
+   reaches GitHub later, inside the implementation PR, so there is one review of one
+   coherent change rather than two reviews of half of it each — and the plan is still
+   there in the diff, where the reviewer can check the code against it.
+2. **Stage 4 is a new session with a deliberately chosen model.** A planning session's
+   context is spent arguing about the design; a build wants a clean one. Which model
+   builds is a judgement about the work, not something to inherit from whatever was
+   planning.
+3. **No pull request opens without being asked for.** Not the plan's, not a spec
+   amendment's, not the implementation's. A PR is a request for a named person's
+   attention, and approving one is not approving the next.
 
 Zero model calls in the workflow. It closes the "did anyone notice this spec landed?"
 gap, which is the real failure at this boundary, without taking the plan away from the
@@ -90,9 +118,10 @@ The `workflow_dispatch` path has no base commit to diff against, so it cannot ma
 call and keeps the reopen.
 
 The engineer's half is not automated, deliberately — noticing that a spec is wrong is
-the judgement being paid for. The skill tells them to comment what is missing, label the
-issue `blocked-on-spec`, and link the amendment PR; the landed re-approval clears that
-label. `needs-policy-owner` covers concerns raised at *design* time; `blocked-on-spec`
+the judgement being paid for. The skill has the agent say what is missing and prepare the
+amendment on a branch, then ask before opening the PR or writing to the issue; once the
+engineer agrees, the issue gets `blocked-on-spec` and a link to the PR, and the landed
+re-approval clears that label. `needs-policy-owner` covers concerns raised at *design* time; `blocked-on-spec`
 covers concerns raised at *plan* time, which is where the trail used to just stop.
 
 Regenerating the amended spec in CI is intentionally not offered: `spec-from-intent`
