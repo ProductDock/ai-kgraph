@@ -113,7 +113,12 @@
      THREE.Color cannot parse the functional rgb() with an alpha channel that
      --gridline uses in dark mode. */
   --graph-edge: #c3c9d1;
-  --graph-floor: #c8d4e1;
+  /* Darker than it was (#c8d4e1, 1.50:1), and this is as far as it goes on its
+     own: the ink ramp below keeps the floor quieter than an edge, and the edge
+     measures 1.67:1 against the page. At 1.60:1 the grid has a third of a step
+     of headroom left; past that the floor has to be darkened with the edge, not
+     instead of it. */
+  --graph-floor: #c2cedc;
   --graph-shadow: #e5ebf2;
   /* The two ends of the scene's backdrop gradient (see .graph-space below).
      --graph-space-near is the colour at the vanishing point, which is where
