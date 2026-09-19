@@ -62,6 +62,10 @@ budget before it exists.
         │
         ▼
   human says yes → PR "plan + <type>: <what was built>"     = carries plan.md + the code
+        └─ body carries "Closes #<n>", the plan: <slug> issue
+        │
+        ▼
+  PR merges → the plan task closes itself                   = the trail ends where it began
 ```
 
 The skill ends at that commit and that request. Implementation is a separate session the
@@ -82,6 +86,20 @@ otherwise remove a human decision:
 3. **No pull request opens without being asked for.** Not the plan's, not a spec
    amendment's, not the implementation's. A PR is a request for a named person's
    attention, and approving one is not approving the next.
+
+One thing is *not* optional, though, and it is the link that makes the trail a loop: the
+implementation PR's body must carry **`Closes #<n>`**, naming the `plan: <slug>` issue
+`plan-ready` opened when the spec was approved. Merging it then closes the task that
+summoned the work, and one issue carries the whole history — approved, planned, sent back
+and re-approved if it came to that, built, done.
+
+It has to be the GitHub keyword with the number on its own line. Prose — "closes the plan
+task" — reads identically to a human and does nothing whatsoever to GitHub, so the task
+survives the merge that completed it and sits open indefinitely, which is exactly the
+"did anyone notice?" failure this boundary's automation exists to prevent. `plan-ready.yml`
+also *depends* on the keyword: it watches for the implementation PR's `Closes #n` to tell
+that merge apart from a product owner re-approving an amended spec, and skips the reopen it
+would otherwise perform.
 
 Zero model calls in the workflow. It closes the "did anyone notice this spec landed?"
 gap, which is the real failure at this boundary, without taking the plan away from the

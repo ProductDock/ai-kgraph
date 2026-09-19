@@ -108,6 +108,18 @@ the plan and nothing else.
 >   is a plain-language description of **what was actually built**, not the slug and not a
 >   restatement of the spec's title. `plan + feat: colour by branch, size by whether a node
 >   carries anything` — not `plan + feat: graph-branch-colour-and-size`.
+> - **Put `Closes #<n>` in the PR body, naming the `plan: <slug>` issue** — the task
+>   `plan-ready` opened when the spec was approved. It must be the GitHub keyword, on its
+>   own line, with the number: `Closes #31`. Prose like "closes the plan task" reads the
+>   same to a person and does nothing at all to GitHub, which is how a task survives the
+>   merge that completed it and sits open forever.
+>
+>   This is the one link that closes the loop the whole trail hangs on — approved,
+>   planned, built, done, on one issue. `plan-ready.yml` already depends on it: it watches
+>   for the implementation PR's `Closes #n` to distinguish that merge from a product owner
+>   re-approving an amended spec, and skips the reopen it would otherwise do.
+>
+>   If you cannot find the issue number, ask rather than guessing or omitting it.
 > - **Say what is not done.** Manual checks you could not run, steps you skipped, values
 >   still to be tuned — in the PR body, not omitted because the tests are green.
 
