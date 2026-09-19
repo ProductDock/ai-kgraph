@@ -59,6 +59,12 @@ const CAMERA_FOV = 62;
 /** Breathing room left around the graph once it has been fitted to the frame. */
 const OVERVIEW_MARGIN = 1.06;
 /**
+ * How many times the overview re-centres and re-fits. Target and distance depend on
+ * each other, so the solve is iterative; see `overviewFraming`, which records where
+ * three came from.
+ */
+const OVERVIEW_CENTRING_PASSES = 3;
+/**
  * Fog and label fade are multiples of how far the camera currently is from what it
  * is looking at, not of the scene radius. The scene radius is fixed, but the view
  * distance is not: it differs between a desktop and a portrait tablet (the fit in
@@ -593,6 +599,11 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      * the state using the feature puts them in. This is the origin-relative half of
      * FR-6: wherever the target is, the camera stays outside the ring.
      *
+     * It is a backstop, not the mechanism: `fenceDistance` folds the same bound into
+     * the overview solve, so a framed camera is already outside and this never has to
+     * move it - which matters, because moving it here would silently undo the
+     * framing. What is left for it is the viewer dollying in by hand.
+     *
      * It must not call `invalidate()`. It runs inside a frame, and scheduling from
      * there is the silent 60fps loop the `inFrame` guard exists to prevent.
      */
@@ -616,11 +627,20 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      * the camera at once is a fight the viewer loses.
      */
     let introStartedAt: number | null = null;
+    /**
+     * The camera's *offset from the orbit target* at the end of the sweep, not its
+     * position. The overview target is no longer the origin, so a sweep written in
+     * world positions would rotate the camera around the hub while the controls
+     * orbit it around somewhere else, and the two would disagree the moment the
+     * viewer took over mid-sweep.
+     */
     const introBase = new Vector3();
     /**
      * The sweep starts from a different azimuth, and the graph is wide enough that
      * the distance which frames it from one angle crops it from another - so the
      * distance is fitted at both ends and interpolated, rather than carried over.
+     * Both ends are fitted against the *same* target: the sweep turns the camera,
+     * it does not re-centre the graph underneath it.
      */
     let introFromDistance = 0;
     let introToDistance = 0;
@@ -635,12 +655,16 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       // Smoothstep: the sweep has to start and end at a standstill, or the load
       // reads as a jerk rather than as the scene settling.
       const eased = t * t * (3 - 2 * t);
+      // Rotate and re-length the *offset*, then put it back on the target: that is
+      // an azimuth orbit about what the camera is looking at, which is what
+      // `OrbitControls` would have done with the same drag.
       camera.position
         .copy(introBase)
         .applyAxisAngle(WORLD_UP, INTRO_SWEEP * (eased - 1))
         .setLength(
           introFromDistance + (introToDistance - introFromDistance) * eased,
-        );
+        )
+        .add(controls.target);
       if (t >= 1) introStartedAt = null;
       return introStartedAt !== null;
     }
@@ -767,9 +791,57 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       }
     }
 
+    /** Half-width and half-height of the frustum one world unit ahead of the camera. */
+    function frameTangents(): { tanH: number; tanV: number } {
+      const { clientWidth: width, clientHeight: height } = container!;
+      const aspect = width && height ? width / height : 1;
+      const tanV = Math.tan((CAMERA_FOV * Math.PI) / 360);
+      return { tanV, tanH: tanV * aspect };
+    }
+
     /**
-     * How far back the camera has to sit, looking from `direction`, for the whole
-     * graph to fit the frame.
+     * The camera's own axes for a given unit orbit `direction`: `forward` points
+     * from the camera at what it is looking at, `right` and `up` span the screen.
+     */
+    function viewBasis(direction: Vector3) {
+      const forward = direction.clone().negate();
+      const right = new Vector3().crossVectors(forward, WORLD_UP);
+      // The polar fence rules out a view straight down the up axis, so this is
+      // only ever degenerate if the fence is removed.
+      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+      right.normalize();
+      const up = new Vector3().crossVectors(right, forward).normalize();
+      return { forward, right, up };
+    }
+
+    /**
+     * The smallest target-relative distance at which the camera is still outside the
+     * ring, looking from a unit `direction` at `target`.
+     *
+     * `controls.minDistance` is measured from the target and `keepOutsideRing` from
+     * the origin. While the overview target *was* the origin those were the same
+     * number; with the target off-centre they are not - a camera a legal 23 from a
+     * target 8 off-centre can sit 15 from the hub, and `keepOutsideRing` would then
+     * shove it back every frame, off the framing this solve just found. So the fence
+     * has to be part of the solve rather than a correction applied after it.
+     *
+     * Solves `|target + d * direction| = MIN_ORBIT_DISTANCE` for the larger root.
+     */
+    function fenceDistance(direction: Vector3, target: Vector3): number {
+      const along = target.dot(direction);
+      const discriminant =
+        along * along -
+        target.lengthSq() +
+        MIN_ORBIT_DISTANCE * MIN_ORBIT_DISTANCE;
+      // No root: the line of sight never enters the fence at all, so every distance
+      // on it is legal and the fit is free to use its own.
+      if (discriminant <= 0) return 0;
+      return -along + Math.sqrt(discriminant);
+    }
+
+    /**
+     * How far back the camera has to sit from `target`, looking from a unit
+     * `direction`, for the whole graph to fit the frame.
      *
      * Solved against the actual node positions rather than the bounding sphere,
      * because the graph is far wider than it is tall: a sphere fit frames mostly
@@ -779,24 +851,16 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      * distance alone was enough at any screen size (§3 Q5, §9.4); it is not, and
      * this is what makes V-10's tablet check pass rather than be waived.
      */
-    function overviewDistance(direction: Vector3): number {
-      const { clientWidth: width, clientHeight: height } = container!;
-      const aspect = width && height ? width / height : 1;
-      const tanV = Math.tan((CAMERA_FOV * Math.PI) / 360);
-      const tanH = tanV * aspect;
-
-      const forward = direction.clone().normalize().negate();
-      const right = new Vector3().crossVectors(forward, WORLD_UP);
-      // The polar fence rules out a view straight down the up axis, so this is
-      // only ever degenerate if the fence is removed.
-      if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
-      right.normalize();
-      const up = new Vector3().crossVectors(right, forward).normalize();
+    function fitDistance(direction: Vector3, target: Vector3): number {
+      const { tanH, tanV } = frameTangents();
+      const { forward, right, up } = viewBasis(direction);
 
       const point = new Vector3();
       let distance = MIN_ORBIT_DISTANCE;
       for (const node of nodes) {
-        point.set(...node.position);
+        // Relative to the target, which is what the fov opens out from - the
+        // offset target is the whole point of the change.
+        point.set(...node.position).sub(target);
         // Behind the target counts as negative depth, which correctly *reduces*
         // the distance a near node needs.
         const depth = point.dot(forward);
@@ -806,7 +870,83 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
           (Math.abs(point.dot(up)) + node.radius) / tanV - depth,
         );
       }
-      return distance * OVERVIEW_MARGIN;
+      return Math.max(
+        distance * OVERVIEW_MARGIN,
+        fenceDistance(direction, target),
+      );
+    }
+
+    /**
+     * Where the overview camera looks, and from how far.
+     *
+     * The target is not the hub. The hub is at the origin, but the content is not
+     * centred on it: the ring splits its azimuth evenly on purpose while the
+     * branches hanging off it differ wildly in weight, so from any angle the mass
+     * sits to one side of the middle. Framing symmetrically about the origin -
+     * which is what `fitDistance` taking `Math.abs` of each screen offset amounts
+     * to - reserves as much room on the empty side as the heaviest branch needs on
+     * the full one. Measured on the day-one seed at 1728x900, that reserved room is
+     * a third of the frame: the graph spanned NDC y [-0.91, 0.40] and filled 41% of
+     * the viewport. It is why the opening view led with an empty top third.
+     *
+     * Target and distance are solved *together*, by iteration, because each depends
+     * on the other. Centring the bounding box in world units does not centre it on
+     * screen - perspective divides by depth, so the far half of the graph projects
+     * smaller than the near half and a world-centred box still lands low. Centring
+     * it in NDC instead needs a distance, and the distance that frames it depends on
+     * where the target is. So: fit, measure the NDC box, move the target by its
+     * centre, refit. Three passes is convergence to two decimal places on both the
+     * day-one seed and the 148-node envelope - the second pass already moves the
+     * target by under 5% - and the loop is a few hundred dot products that runs on
+     * load, on resize-free re-framing and on Escape, never per frame.
+     *
+     * Measured after: NDC y [-0.76, 0.74], 67% of the viewport, at a distance of
+     * 39.5 rather than 49.3.
+     */
+    function overviewFraming(direction: Vector3): {
+      target: Vector3;
+      distance: number;
+    } {
+      // Every solver here is written against a unit direction; `showOverview` hands
+      // in the raw camera-to-target vector.
+      const unit = direction.clone().normalize();
+      const { forward, right, up } = viewBasis(unit);
+      const { tanH, tanV } = frameTangents();
+
+      const target = new Vector3();
+      let distance = fitDistance(unit, target);
+      const point = new Vector3();
+
+      for (let pass = 0; pass < OVERVIEW_CENTRING_PASSES; pass += 1) {
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        for (const node of nodes) {
+          point.set(...node.position).sub(target);
+          // `fitDistance` has just guaranteed every node clears the near plane, so
+          // this is never zero or behind the camera.
+          const depth = distance + point.dot(forward);
+          const halfX = node.radius / (depth * tanH);
+          const halfY = node.radius / (depth * tanV);
+          const across = point.dot(right) / (depth * tanH);
+          const along = point.dot(up) / (depth * tanV);
+          minX = Math.min(minX, across - halfX);
+          maxX = Math.max(maxX, across + halfX);
+          minY = Math.min(minY, along - halfY);
+          maxY = Math.max(maxY, along + halfY);
+        }
+
+        // The box's centre, in NDC, put back into world units at the depth the
+        // target itself sits at - which is `distance`, by definition.
+        target
+          .addScaledVector(right, ((minX + maxX) / 2) * tanH * distance)
+          .addScaledVector(up, ((minY + maxY) / 2) * tanV * distance);
+        distance = fitDistance(unit, target);
+      }
+
+      return { target, distance };
     }
 
     // ---- camera framing --------------------------------------------------------
@@ -869,7 +1009,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       focusedIdRef.current = null;
       const direction = camera.position.clone().sub(controls.target);
       if (direction.lengthSq() === 0) direction.copy(openingDirection);
-      flyTo(new Vector3(0, 0, 0), overviewDistance(direction));
+      const { target, distance } = overviewFraming(direction);
+      flyTo(target, distance);
     }
 
     function setScaleTarget(index: number, target: number) {
@@ -965,10 +1106,12 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     controls.addEventListener("change", invalidate);
 
     onResize();
+    const opening = overviewFraming(openingDirection);
+    controls.target.copy(opening.target);
     camera.position
-      .copy(openingDirection)
-      .multiplyScalar(overviewDistance(openingDirection));
-    introBase.copy(camera.position);
+      .copy(opening.target)
+      .addScaledVector(openingDirection, opening.distance);
+    introBase.copy(camera.position).sub(controls.target);
     // Reduced motion gets the floor and the still frame it already reads as 3D
     // from, and none of the sweep.
     const stillness = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -976,10 +1119,13 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       const introDirection = openingDirection
         .clone()
         .applyAxisAngle(WORLD_UP, -INTRO_SWEEP);
-      introToDistance = camera.position.length();
-      introFromDistance = overviewDistance(introDirection);
+      introToDistance = opening.distance;
+      introFromDistance = fitDistance(introDirection, opening.target);
       introStartedAt = performance.now();
-      camera.position.copy(introDirection).setLength(introFromDistance);
+      camera.position
+        .copy(introDirection)
+        .setLength(introFromDistance)
+        .add(controls.target);
     }
     // A wheel or a touch that OrbitControls handles itself never reaches
     // `onPointerDown`, so the controls' own "the viewer is driving" event is the

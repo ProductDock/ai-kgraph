@@ -40,6 +40,17 @@ describe("selectLabelled", () => {
     expect(selected.map((node) => node.id)).toContain("ai");
   });
 
+  // The ring is the frame the viewer takes their bearings from - it is what the
+  // header key names - so it is in the pool whatever the camera is doing.
+  it("always includes every ring topic, however far away it is", () => {
+    const ring = nodes.filter((node) => node.depth === 1);
+    expect(ring.length).toBeGreaterThan(1);
+
+    const selected = selectLabelled(nodes, camera, null).map((node) => node.id);
+
+    for (const topic of ring) expect(selected).toContain(topic.id);
+  });
+
   it("always includes the focused node, however far away it is", () => {
     const farthest = [...nodes].sort(
       (a, b) =>
@@ -67,8 +78,12 @@ describe("selectLabelled", () => {
 
   it("prefers nearer nodes, and breaks ties on shallower depth", () => {
     const selected = selectLabelled(nodes, camera, null);
+    // The hub and the ring are pinned, so distance says nothing about them: the
+    // ordering claim is about everything the pool is free to choose.
+    const contested = (node: GraphSceneNode) =>
+      node.parentId !== null && node.depth > 1;
     const unselected = nodes.filter(
-      (node) => !selected.includes(node) && node.parentId !== null,
+      (node) => !selected.includes(node) && contested(node),
     );
 
     const distance = (node: GraphSceneNode) =>
@@ -78,7 +93,7 @@ describe("selectLabelled", () => {
         node.position[2] - camera[2],
       );
     const worstSelected = Math.max(
-      ...selected.filter((node) => node.parentId !== null).map(distance),
+      ...selected.filter(contested).map(distance),
     );
 
     expect(Math.min(...unselected.map(distance))).toBeGreaterThanOrEqual(

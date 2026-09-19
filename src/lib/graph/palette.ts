@@ -27,8 +27,15 @@ export const MAX_DEPTH = 4;
  *
  * The hub's step is deliberately far ahead of the rest rather than one more move
  * along a sequence: it has to read as "the thing everything hangs off", which means
- * unmistakably larger than a ring topic and large enough to hold its own name inside
- * it. Tuning values, judged on screen.
+ * unmistakably larger than a ring topic. Tuning values, judged on screen.
+ *
+ * It used to also have to be large enough to hold its own name *inside* it. It does
+ * not any more - `intent/graph-labels-under-nodes/` put every label below its circle
+ * and made no exception for the hub - so the only floor left on this number is the
+ * one the eye sets. It came down from 2.6 on that basis; at 2.2 it is still 2.1x a
+ * ring topic. Shrinking it only loosens the two assertions that mention it
+ * (`layout.test.ts`'s hub-to-ring gap and its 2.5x separation floor), so the ceiling
+ * is what is worth watching, not the floor.
  *
  * `GROUP_RADIUS` is bounded by the layout, not by taste: `layout.test.ts` floors
  * every node pair's centre distance at 2.5x the larger radius, and deep groups - which
@@ -38,7 +45,7 @@ export const MAX_DEPTH = 4;
  * distances scale with `RING_RADIUS`/`SHELL_GAP` and this radius does not, so
  * tightening the layout again moves the ceiling, not this number.
  */
-export const HUB_RADIUS = 2.6;
+export const HUB_RADIUS = 2.2;
 export const GROUP_RADIUS = 1.05;
 export const LEAF_RADIUS = 0.42;
 

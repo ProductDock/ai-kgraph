@@ -93,10 +93,23 @@ function distanceTo(position: Vec3, camera: Vec3): number {
 }
 
 /**
- * Which nodes get one of the 24 labels: the root and the focused node first - they
- * are the two a viewer is orienting by - then nearest to the camera, with shallower
- * depth breaking ties so a branch boundary resolves the same way every frame rather
- * than flickering between two equidistant nodes (spec FR-7, R-4).
+ * Which nodes get one of the 24 labels: the pinned ones first - the hub, the ring
+ * topics and the focused node - then nearest to the camera, with shallower depth
+ * breaking ties so a branch boundary resolves the same way every frame rather than
+ * flickering between two equidistant nodes (spec FR-7, R-4).
+ *
+ * The ring is pinned because it is the one thing in the scene a viewer is meant to
+ * take their bearings from: it is what `branch-key.tsx` lists by name in the header
+ * and what the layout spends an even azimuth split on. Left to distance order it
+ * loses - a ring topic on the far side of the hub is further away than a dozen leaf
+ * nodes in the near branch, so the frame ends up naming `pi` and `tau` while a whole
+ * top-level topic sits unlabelled. It costs one pool slot per ring topic out of 24,
+ * and the layout's ring holds four before two of them have to share a colour
+ * (colour.ts, HUE_COUNT), so the pool is never at risk of being eaten by it.
+ *
+ * Pinning is pool membership only, not visibility: a pinned node still fades with
+ * distance and still loses a collision to whatever was placed before it. Only the
+ * hub is exempt from the fade, and it stays the only exemption.
  *
  * Pure, so it is testable without a GPU (V-14).
  */
@@ -109,8 +122,11 @@ export function selectLabelled(
   const rest: GraphSceneNode[] = [];
 
   for (const node of nodes) {
-    if (node.parentId === null || node.id === focusedId) pinned.push(node);
-    else rest.push(node);
+    if (node.parentId === null || node.depth === 1 || node.id === focusedId) {
+      pinned.push(node);
+    } else {
+      rest.push(node);
+    }
   }
 
   rest.sort((a, b) => {
