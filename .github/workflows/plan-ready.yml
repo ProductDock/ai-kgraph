@@ -11,6 +11,11 @@
 # every later one comments on that task (reopening it if it had been closed) rather than
 # opening a duplicate.
 #
+# One exception: if plan.md moved in the same push, the spec was amended by the
+# implementation PR — the one that closes the plan task. That push comments but does not
+# reopen, and does not label spec-revised. Without it the gate fights the merge, because
+# GitHub processes `Closes #n` seconds before this job reads the issue state.
+#
 # See docs/plan-handoff.md.
 
 name: plan-ready
@@ -108,8 +113,26 @@ jobs:
                 stat="$(git diff --stat "$BASE" "${{ github.sha }}" -- "$spec" || true)"
               fi
 
+              # Did plan.md move in this same push? A spec amended alongside its own plan
+              # is the implementation PR landing (which closes this task), not the product
+              # owner sending an amended spec back to an engineer. Both look identical from
+              # a push event, and the PR's close beats this job to the issue by a few
+              # seconds — so without this, the implementation reopens the task it closed.
+              # Unknowable on workflow_dispatch, which has no base: there we reopen.
+              implementing=""
+              if [ -n "${BASE:-}" ] && [ -n "$(git diff --name-only --diff-filter=AM \
+                    "$BASE" "${{ github.sha }}" -- "$dir/plan.md")" ]; then
+                implementing=1
+              fi
+
+              if [ -n "$implementing" ]; then
+                headline="**Spec amended as part of the implementation.** \`$dir/plan.md\` landed in the same push, so this is the build arriving — not a re-approval to plan against."
+              else
+                headline="**Spec updated and re-approved on \`main\`.** Re-read it before planning further — the version you planned against is no longer the approved one."
+              fi
+
               cat > comment.md <<COMMENT
-          **Spec updated and re-approved on \`main\`.** Re-read it before planning further — the version you planned against is no longer the approved one.
+          $headline
 
           | | |
           |---|---|
@@ -155,16 +178,28 @@ jobs:
               # The amended spec has landed, so whatever the plan was blocked on is
               # resolved as far as this gate can tell. Adding/removing labels is best
               # effort: a missing label must not fail the handoff.
-              gh issue edit "$issue" --add-label spec-revised >/dev/null 2>&1 || true
+              # spec-revised tells an engineer to go re-read the spec before planning
+              # further. On an implementation push there is nothing left to plan, so the
+              # label would be an instruction to nobody.
+              if [ -z "$implementing" ]; then
+                gh issue edit "$issue" --add-label spec-revised >/dev/null 2>&1 || true
+              fi
               gh issue edit "$issue" --remove-label blocked-on-spec >/dev/null 2>&1 || true
               state="$(gh issue view "$issue" --json state --jq .state)"
-              if [ "$state" = "CLOSED" ]; then
+              if [ "$state" = "CLOSED" ] && [ -z "$implementing" ]; then
                 gh issue reopen "$issue" \
                   --comment "Reopened: the spec was amended and re-approved after this task was closed." >/dev/null
+              elif [ "$state" = "CLOSED" ]; then
+                echo "::notice::$slug: plan.md landed in the same push — leaving the plan task closed"
               fi
               url="$(gh issue view "$issue" --json url --jq .url)"
-              echo "::notice::spec re-approved for $slug → $url"
-              printf 'Spec updated and re-approved: %s\n' "$url" >> notify.txt
+              if [ -n "$implementing" ]; then
+                echo "::notice::spec amended alongside its plan for $slug → $url"
+                printf 'Spec amended alongside its implementation: %s\n' "$url" >> notify.txt
+              else
+                echo "::notice::spec re-approved for $slug → $url"
+                printf 'Spec updated and re-approved: %s\n' "$url" >> notify.txt
+              fi
               continue
             fi
 
