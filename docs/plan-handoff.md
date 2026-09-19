@@ -48,8 +48,12 @@ budget before it exists.
         ├─ loads intent.md + spec.md + CLAUDE.md, reads the code first
         ├─ writes files / sequence / risks / proof
         ├─ interrogates: what breaks, riskiest step, rollback, open questions
-        └─ commits intent/<slug>/plan.md  ← then, and only then, implements
+        └─ commits intent/<slug>/plan.md  ← and stops there, handing back to the engineer
 ```
+
+The skill ends at that commit. Implementation is a separate session the engineer starts
+once they have read the plan — the pause between the two *is* the approval, so the plan
+session never rolls on into building, and never asks to.
 
 Zero model calls in the workflow. It closes the "did anyone notice this spec landed?"
 gap, which is the real failure at this boundary, without taking the plan away from the

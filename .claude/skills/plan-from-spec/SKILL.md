@@ -1,6 +1,6 @@
 ---
 name: plan-from-spec
-description: 'Start a Stage 3 build session from an approved spec — load intent.md and spec.md in plan mode, interrogate the plan about breaking changes and risk, then commit it as plan.md before implementing. Use when picking up a "plan: <slug>" issue, when asked to start work on an approved spec, or whenever someone says "let''s implement <slug>", "start on this spec", or "write the plan".'
+description: 'Write the Stage 3 plan for an approved spec — load intent.md and spec.md in plan mode, interrogate the plan about breaking changes and risk, commit it as plan.md, then stop and hand back to the engineer. It never implements. Use when picking up a "plan: <slug>" issue, when asked to start work on an approved spec, or whenever someone says "let''s implement <slug>", "start on this spec", or "write the plan".'
 ---
 
 # Plan from an approved spec
@@ -8,6 +8,11 @@ description: 'Start a Stage 3 build session from an approved spec — load inten
 The plan is the Stage 3 artifact and the design review. It happens **before**
 implementation, in read-only plan mode, and it is not finished until it has been
 argued with. A plan nobody questioned is not an approval record.
+
+**This skill ends when `plan.md` is committed.** It does not implement, and it does not
+ask whether to implement. Stage 4 is a separate session the engineer starts deliberately,
+after reading the plan — that pause is the approval, and an agent that rolls straight
+into building removes it.
 
 Argument for `<slug>`: the intent slug, e.g. `claims-status-visibility`. If none was
 given, list `intent/*/` folders that have a `spec.md` but no `plan.md` and ask which.
@@ -46,13 +51,24 @@ given, list `intent/*/` folders that have a `spec.md` but no `plan.md` and ask w
 6. **Iterate with the engineer** until the implementation would be self-explanatory.
    Their objection always outranks your first draft.
 
-7. **Commit the plan before building.** Write `intent/<slug>/plan.md`, commit as
-   `plan: <slug>` on branch `plan/<slug>`, and reference the `plan: …` issue if one
-   exists. Only then accept the plan and implement.
+7. **Commit the plan.** Write `intent/<slug>/plan.md`, commit as `plan: <slug>` on
+   branch `plan/<slug>`, and reference the `plan: …` issue if one exists.
 
-8. **Keep it true.** If the implementation deviates from the plan, update `plan.md` in
-   the same PR and say why. A stale plan is worse than none — later review stages read
-   it as the approved intent.
+8. **Stop and hand back.** Tell the engineer, in a few lines:
+   - `intent/<slug>/plan.md` is written and committed, and on which branch
+   - the proof command the plan settled on
+   - anything still open that they should decide before building
+
+   Then end the turn. Do not start implementing, do not offer to, and do not begin
+   "just the first step". If the engineer replies "go ahead", implementation is their
+   call and a fresh instruction — not something this skill carries over on its own.
+
+## After the plan
+
+Implementation is Stage 4 and starts from the committed plan, not from this session's
+context. When it runs: if it deviates from the plan, update `plan.md` in the same PR and
+say why. A stale plan is worse than none — later review stages read it as the approved
+intent.
 
 ## When the spec is wrong
 
@@ -76,7 +92,8 @@ break violates policy — `breach ⇒ new intent.md` in the playbook.
 
 - Never write `plan.md` for a spec that has not been merged to the default branch.
   An unmerged spec has not passed gate 2.
-- Never write code in the same turn as the plan. Plan, commit, then build.
+- Never write code in this session. The skill's last action is the `plan.md` commit;
+  building is a separate, human-initiated session.
 - No plan for work with no spec — if there is only an `intent.md`, the design stage
   has not run; point at `.github/workflows/spec-from-intent.yml`.
 - Do not silently widen scope. Anything the spec does not cover is a new intent.
