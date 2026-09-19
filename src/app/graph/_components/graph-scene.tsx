@@ -26,6 +26,7 @@ import type { GraphScene } from "@/lib/graph/types";
 import {
   declutter,
   GraphLabels,
+  labelOffsetPx,
   selectLabelled,
   type GraphLabelsHandle,
 } from "./graph-labels";
@@ -376,12 +377,23 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
             (node) => {
               projected.set(...node.position);
               const distance = projected.distanceTo(camera.position);
+              // The radius as *drawn*: the hover and focus bumps scale the mesh,
+              // and a base-radius offset would let a hovered circle grow into its
+              // own label (spec FR-2).
+              const drawnRadius =
+                node.radius * scales[indexById.get(node.id)!]!;
+              const offset = labelOffsetPx(
+                drawnRadius,
+                distance,
+                height,
+                CAMERA_FOV,
+              );
               projected.project(camera);
 
               const behindCamera = projected.z > 1;
               // The hub's name is exempt from the distance fade - it is the label a
               // viewer takes their bearings from, and a hub whose name dissolves as
-              // you back away is a dot with a caption again (spec FR-1, §9.2). Only
+              // you back away is a dot with a caption again (spec FR-1). Only
               // the fade is exempt: a hub genuinely behind the camera still goes,
               // or its name would float over whatever is in front of it.
               const isRoot = node.parentId === null;
@@ -394,9 +406,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
               return {
                 text: node.name,
                 x: ((projected.x + 1) / 2) * width,
-                y: ((1 - projected.y) / 2) * height,
+                y: ((1 - projected.y) / 2) * height + offset,
                 opacity,
-                centred: isRoot,
               };
             },
           ),

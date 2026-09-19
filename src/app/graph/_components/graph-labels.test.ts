@@ -5,6 +5,8 @@ import {
   declutter,
   LABEL_MAX_PX,
   LABEL_POOL_SIZE,
+  labelOffsetPx,
+  MIN_GAP_PX,
   selectLabelled,
 } from "./graph-labels";
 
@@ -153,15 +155,20 @@ describe("declutter", () => {
     expect(result[1]!.opacity).toBe(1);
   });
 
-  // FR-1, §9.2
-  it("reserves the box on a centred label's own node, not above it", () => {
-    const hub = { ...at("PD AI", 400, 300), centred: true };
-    const below = at("Protocols", 400, 330);
+  // V-6, FR-2
+  it("reserves a box below the anchor, never above it", () => {
+    // A label a full line *above* another's anchor clears it: `y` is now the top
+    // of the text, so a box occupies one line downward and nothing upward.
+    expect(
+      declutter([at("AI", 400, 300), at("Protocols", 400, 285)]).map(
+        (placement) => placement.opacity,
+      ),
+    ).toEqual([1, 1]);
 
-    expect(declutter([hub, below])[1]!.opacity).toBe(0);
-    // The same two labels with the hub drawn above its node like every other one:
-    // its box sits a line higher and no longer reaches the second.
-    expect(declutter([{ ...hub, centred: false }, below])[1]!.opacity).toBe(1);
+    // Eight pixels below is inside it, and the earlier label wins.
+    expect(
+      declutter([at("AI", 400, 300), at("Protocols", 400, 308)])[1]!.opacity,
+    ).toBe(0);
   });
 
   // FR-8
@@ -183,5 +190,37 @@ describe("declutter", () => {
     );
 
     expect(declutter(placements)).toHaveLength(LABEL_POOL_SIZE);
+  });
+});
+
+describe("labelOffsetPx", () => {
+  const height = 800;
+  const fov = 50;
+
+  // V-3
+  it("pushes a bigger circle's label further down, in proportion to its radius", () => {
+    const hub = labelOffsetPx(2.6, 40, height, fov);
+    const leaf = labelOffsetPx(0.42, 40, height, fov);
+
+    expect(hub).toBeGreaterThan(leaf);
+    // Both are clear of the floor, so the offsets carry the radius ratio intact.
+    expect(leaf).toBeGreaterThan(MIN_GAP_PX);
+    expect(hub / leaf).toBeCloseTo(2.6 / 0.42, 6);
+  });
+
+  // V-4
+  it("shrinks as the camera backs away, because the circle does", () => {
+    expect(labelOffsetPx(0.42, 20, height, fov)).toBeGreaterThan(
+      labelOffsetPx(0.42, 80, height, fov),
+    );
+  });
+
+  // V-5
+  it("never closes the gap entirely, however small the circle gets", () => {
+    expect(labelOffsetPx(0.42, 100000, height, fov)).toBe(MIN_GAP_PX);
+  });
+
+  it("does not divide by zero when the camera is on the node", () => {
+    expect(labelOffsetPx(0.42, 0, height, fov)).toBe(MIN_GAP_PX);
   });
 });

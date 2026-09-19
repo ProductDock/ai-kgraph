@@ -11,16 +11,11 @@ export const LABEL_POOL_SIZE = 24;
 
 export interface LabelPlacement {
   text: string;
-  /** Screen pixels, relative to the canvas. */
+  /** Screen pixels, relative to the canvas. `x` is the text's centre; `y` is its
+   * top, already offset below the node's circle by `labelOffsetPx` (spec FR-2). */
   x: number;
   y: number;
   opacity: number;
-  /**
-   * Drawn on the node rather than above it - the hub, whose name belongs inside its
-   * circle (spec FR-1, §9.2). It changes both the transform and the box `declutter`
-   * reserves, so the two cannot disagree about where the text is.
-   */
-  centred?: boolean;
 }
 
 /** The type size labels are set in. Deliberately small (intent, "labels are
@@ -47,6 +42,43 @@ const LABEL_HEIGHT = LABEL_FONT_PX * 1.3;
  * skips (spec §3 Q2/Q5, NFR-6, V-10).
  */
 export const LABEL_MAX_PX = 132;
+
+/**
+ * How far below a circle its name sits, as a fraction of that circle's on-screen
+ * radius, and the floor that fraction can never take it under. Tuning values, not
+ * invariants (spec §4 D-2, C-2): the tests assert that the offset grows with the
+ * radius, shrinks with distance and never drops below the floor - not what these
+ * two numbers are.
+ */
+const GAP_RATIO = 0.35;
+export const MIN_GAP_PX = 6;
+
+/**
+ * Screen pixels from a node's centre down to the top of its label: its projected
+ * radius plus a gap proportional to it, so a name never lands on its own circle
+ * however big that circle currently looks (spec FR-2, §9.1).
+ *
+ * `worldRadius` is the radius as *drawn*, hover and focus scale included - a base
+ * radius would let a hovered circle grow into its own label.
+ *
+ * Pure, so it is testable without a GPU (V-3, V-4, V-5).
+ */
+export function labelOffsetPx(
+  worldRadius: number,
+  distance: number,
+  viewportHeight: number,
+  fovDegrees: number,
+): number {
+  // A PerspectiveCamera's fov is the *vertical* angle, so half the viewport spans
+  // `distance * tan(fov / 2)` world units - `overviewDistance()`'s relationship,
+  // run in the other direction.
+  const halfHeightWorld = distance * Math.tan((fovDegrees * Math.PI) / 360);
+  const radiusPx =
+    halfHeightWorld > 0
+      ? (worldRadius * viewportHeight) / (2 * halfHeightWorld)
+      : 0;
+  return Math.max(radiusPx * (1 + GAP_RATIO), MIN_GAP_PX);
+}
 
 export interface GraphLabelsHandle {
   apply(placements: LabelPlacement[]): void;
@@ -118,12 +150,13 @@ export function declutter(placements: LabelPlacement[]): LabelPlacement[] {
     // label to protect pixels the ellipsis already ate.
     const halfWidth =
       Math.min(placement.text.length * LABEL_CHAR_WIDTH, LABEL_MAX_PX) / 2;
-    // Matching the transform below: above the node, or centred on it.
+    // Matching the transform below: `y` is the top of the text, which the caller
+    // has already pushed below the node's circle.
     const box = {
       left: placement.x - halfWidth,
       right: placement.x + halfWidth,
-      top: placement.y - LABEL_HEIGHT * (placement.centred ? 0.5 : 1.9),
-      bottom: placement.y - LABEL_HEIGHT * (placement.centred ? -0.5 : 0.4),
+      top: placement.y,
+      bottom: placement.y + LABEL_HEIGHT,
     };
     const collides = kept.some(
       (other) =>
@@ -172,7 +205,7 @@ export function GraphLabels({
         element.textContent = placement.text;
         element.style.visibility = "visible";
         element.style.opacity = String(placement.opacity);
-        element.style.transform = `translate3d(${placement.x}px, ${placement.y}px, 0) translate(-50%, ${placement.centred ? "-50%" : "-140%"})`;
+        element.style.transform = `translate3d(${placement.x}px, ${placement.y}px, 0) translate(-50%, 0%)`;
       }
     },
   }));
