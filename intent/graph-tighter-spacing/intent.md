@@ -49,23 +49,42 @@ Three things the originator explicitly said this must not break:
 - **The middle still reads as the middle.** The hub-to-ring gap stays deliberately wider
   than the gaps between later shells, so the centre of the graph remains obvious.
 
-Not ruled out, and left to design: whether the tightening comes from the spacing itself,
-from the opening camera distance, from node sizes, or from some combination. The
-originator described the symptom, not the mechanism.
+Decided with the originator on 2026-09-19, answering the first draft's open questions:
+
+- **The hub-to-ring distance may shrink proportionally with everything else**, as long as
+  it stays visibly the widest gap in the scene. It is not a fixed number — the
+  relationship is what matters.
+- **The camera's closest approach stays at today's absolute distance.** The fence does not
+  scale down with the ring. The consequence was put to the originator explicitly — with a
+  smaller graph and the same minimum distance you can zoom in *relatively* less than
+  today, so the tightest reachable view will show the graph smaller than it does now —
+  and he accepted it. It does not affect the first-load view, only how far you can push in
+  afterwards.
+- **More labels disappearing at the overview is an acceptable trade.** Closer nodes mean
+  more collisions and today's declutter rule drops more names. That is the price of the
+  tighter framing, and the rule stays unchanged. Not a second problem to solve here.
+- **First load only.** The framing after clicking a node already feels right and is not in
+  scope. If it improves as a side effect, fine; it is not to be tuned separately.
+- **The amount is the design stage's to propose.** The originator has no figure in mind.
+  The spec proposes one with reasoning, he judges it in the running app and says tighter
+  or looser. It is deliberately not a constraint here.
+
+Still left to design: whether the tightening comes from the spacing itself, from the
+opening camera distance, from node sizes, or from some combination. The originator
+described the symptom, not the mechanism.
 
 ## Open questions
 
-- [ ] How much tighter? The originator did not have a number in mind — he chose "less
-      empty space on screen" over "a specific figure", so the design stage should propose
-      one and show it. — *owner:* design stage, confirmed by the product owner
-- [ ] May the hub-to-ring distance shrink at all, as long as it stays proportionally the
-      widest gap in the scene? Or is that one distance fixed? — *owner:* product owner
-- [ ] The camera is fenced to stay outside the ring. If the ring moves in, does the
-      minimum camera distance move with it, or is the current closest-approach the thing
-      to preserve? — *owner:* product owner
-- [ ] Labels are dropped when two would collide. Nodes closer together on screen means
-      more collisions, so more names may disappear at the overview. Is that an acceptable
-      trade for the tighter framing, or a second thing to solve? — *owner:* product owner
-- [ ] Is "first load" the only view that matters here, or should the framing after
-      clicking a node tighten too? The originator picked first load only. — *owner:*
-      product owner
+All five questions raised in the first draft were put back to the originator on
+2026-09-19 and answered; the answers are recorded under **Constraints** above. Nothing is
+left undecided at the intent stage.
+
+- [x] How much tighter? — *answered:* no figure from the originator; the design stage
+      proposes one and he judges it in the app.
+- [x] May the hub-to-ring distance shrink? — *answered:* yes, proportionally, as long as
+      it stays the widest gap.
+- [x] Does the camera's minimum distance move with the ring? — *answered:* no, today's
+      absolute closest approach is kept, with the zoom-in consequence accepted.
+- [x] Are more dropped labels at the overview acceptable? — *answered:* yes, acceptable
+      trade; the declutter rule is unchanged.
+- [x] Does the focus framing tighten too? — *answered:* no, first load only.
