@@ -9,7 +9,9 @@ import {
   DirectionalLight,
   Float32BufferAttribute,
   Fog,
+  InstancedInterleavedBuffer,
   InstancedMesh,
+  InterleavedBufferAttribute,
   LineBasicMaterial,
   LineSegments,
   MeshBasicMaterial,
@@ -24,6 +26,9 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { useThemeTokens } from "@/hooks/use-theme-tokens";
 import {
   HUB_TOKEN,
@@ -41,7 +46,7 @@ import {
   selectLabelled,
   type GraphLabelsHandle,
 } from "./graph-labels";
-import { createTween, tweenDuration } from "./tween";
+import { createTween, prefersReducedMotion, tweenDuration } from "./tween";
 import { UnsupportedNotice } from "./unsupported-notice";
 
 /**
@@ -112,6 +117,8 @@ const FLOOR_DROP = 0.22;
  */
 const EDGE_BOW = 0.09;
 const EDGE_SEGMENTS = 14;
+/** Two per chord: `LineSegments` does not share vertices between segments. */
+const EDGE_VERTICES = EDGE_SEGMENTS * 2;
 /**
  * The opening sweep. The floor makes the scene *look* three-dimensional in a still
  * frame; a few degrees of azimuth on load makes it *behave* three-dimensional -
@@ -177,6 +184,68 @@ const MIN_ORBIT_DISTANCE = 23;
 const HOVER_SCALE = 1.3;
 const HOVER_MS = 120;
 const FOCUS_SCALE = 1.2;
+/**
+ * The focus emphasis: clicking a node dims everything that is not it or one of its
+ * children, and marches dashes down each edge that hangs off it. It holds until the
+ * viewer clicks somewhere else - another node re-targets it, empty space or Escape
+ * releases it - so it is the drawn form of "this is where you are", not a flourish
+ * that plays once.
+ *
+ * The dim is a mix toward the backdrop rather than toward grey: a node mixed to
+ * grey is still a mark competing for attention, one mixed toward what is behind it
+ * recedes.
+ */
+const DIM_IN_MS = 220;
+const DIM_OUT_MS = 420;
+/** How far a dimmed mark travels toward the backdrop; 1 would erase it entirely. */
+const DIM_STRENGTH = 0.8;
+/**
+ * The dashes that march out to the children. Measured *along the edge as a
+ * fraction of its own length*, not in world units: the ring spans are an order of
+ * magnitude longer than a leaf link, so a world-unit dash gives a top-level edge
+ * thirty dashes and a leaf edge one and a half. In fractional units every edge
+ * shows the same `DASH_COUNT` dashes, whatever its length, and they all travel at
+ * the same apparent speed.
+ */
+const DASH_COUNT = 16;
+/** Of each dash-plus-gap period, how much is drawn. */
+const DASH_DUTY = 0.3;
+/** How long one dash takes to travel the whole edge, parent to child. */
+const DASH_TRAVEL_MS = 900;
+/** Dashes fade in and out rather than appearing mid-edge. */
+const DASH_FADE_MS = 200;
+/**
+ * The travelling dot. One leaves the clicked node per path and runs outward to a
+ * leaf, and it moves at exactly the dashes' rate - one edge per DASH_TRAVEL_MS - so
+ * it reads as the head of the flow the dashes are the trail of, rather than as a
+ * second animation at its own speed.
+ *
+ * Paths that share their first edge carry a dot each, exactly in phase, so they
+ * overlap into one dot that visibly *splits* at the child and runs on to each
+ * grandchild. That is the reason the dots are per path and not per edge.
+ */
+const DOT_RADIUS = 0.18;
+/**
+ * The lit edges are drawn with `LineSegments2`, which is a strip of camera-facing
+ * quads rather than GL lines - because `linewidth` on a GL line is ignored by every
+ * platform that matters, so the ordinary edges are hairlines whatever is asked for.
+ * At one pixel the dashes are thinner than the dot riding them and they alias badly
+ * against the dimmed graph; at this width the trail reads as a channel with
+ * something moving in it. In CSS pixels, so a dash is the same weight on a phone as
+ * on a desktop - which is also why the material needs the viewport size
+ * (`resolution`) and has to be told about it on every resize.
+ */
+const FLOW_WIDTH_PX = 1.9;
+/**
+ * While the dashes are the *only* thing moving, frames are paced by a timer at this
+ * interval rather than requested back-to-back. The scene renders on demand (R-11)
+ * and a held emphasis is the one animation with no end of its own, so it would
+ * otherwise be a 60fps loop running for as long as a node stays focused - on a page
+ * nobody is touching. A dash flow reads the same at 30, and this halves the cost of
+ * standing still. Anything else that moves - the camera, damping, a hover - takes
+ * the normal path and is not paced by it.
+ */
+const EMPHASIS_FRAME_MS = 1000 / 30;
 /** Enough movement between press and release to have been an orbit, not a click. */
 const CLICK_SLOP_PX = 5;
 const LABEL_INTERVAL_MS = 1000 / 30;
@@ -357,6 +426,12 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     const edgeVertices = new Float32Array(edges.length * EDGE_SEGMENTS * 6);
+    /**
+     * Each arc's three control points, kept so a point at an arbitrary `t` can be
+     * found later. The line geometry above is the arc already flattened into chords
+     * and cannot be read back at a `t` that falls between two of them.
+     */
+    const edgeArcs = new Float32Array(edges.length * 9);
     edges.forEach((edge, index) => {
       edgeFrom.fromArray(nodes[indexById.get(edge.sourceId)!]!.position);
       edgeTo.fromArray(nodes[indexById.get(edge.targetId)!]!.position);
@@ -378,6 +453,10 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         .addVectors(edgeFrom, edgeTo)
         .multiplyScalar(0.5)
         .addScaledVector(edgeLift, 2 * EDGE_BOW * length);
+
+      edgeArcs.set(edgeFrom.toArray(), index * 9);
+      edgeArcs.set(edgeControl.toArray(), index * 9 + 3);
+      edgeArcs.set(edgeTo.toArray(), index * 9 + 6);
 
       const base = index * EDGE_SEGMENTS * 6;
       arcPoint(edgeHere, 0);
@@ -492,6 +571,448 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     shadowMesh.renderOrder = -1;
     world.add(shadowMesh);
 
+    // ---- focus emphasis: dashes marching out to the children -------------------
+    /** The edges hanging *off* each node; `sourceId` is always the parent. */
+    const childEdges = new Map<string, number[]>();
+    edges.forEach((edge, index) => {
+      const hanging = childEdges.get(edge.sourceId);
+      if (hanging) hanging.push(index);
+      else childEdges.set(edge.sourceId, [index]);
+    });
+
+    /** Where each vertex of an edge sits along its arc, 0 at the parent end. */
+    const edgeVertexT = new Float32Array(EDGE_VERTICES);
+    for (let step = 0; step < EDGE_SEGMENTS; step += 1) {
+      edgeVertexT[step * 2] = step / EDGE_SEGMENTS;
+      edgeVertexT[step * 2 + 1] = (step + 1) / EDGE_SEGMENTS;
+    }
+
+    /**
+     * The token colours, kept apart from what is drawn. The emphasis mixes *from*
+     * these, so the animation ending and the theme changing under it both land back
+     * on exactly the value the palette contract validated - there is no accumulated
+     * drift to reset.
+     */
+    const baseNodeColours = new Float32Array(nodes.length * 3);
+    const baseEdgeColour = new Color(0x808080);
+    /** What a dimmed mark recedes into: the backdrop at the vanishing point. */
+    const backdropColour = new Color(0xffffff);
+
+    /**
+     * The flow overlay: the clicked node's own edges, drawn a second time on top of
+     * themselves, dashed, with the dashes travelling parent to child.
+     *
+     * A second object rather than dashing the edge mesh itself, because a dash is a
+     * *discarded fragment* - the gaps have to be genuinely absent, not painted in
+     * the backdrop colour, or every gap would occlude whatever is behind it. The
+     * dimmed solid edge stays underneath, so the link is still legible between the
+     * dashes and the animation reads as something running along it rather than as
+     * the edge blinking.
+     *
+     * Sized once for the widest two-level fan-out in the tree and re-filled per
+     * click, so clicking never allocates a buffer or touches the GPU's allocator.
+     */
+    /** Every edge the emphasis would light for a given node, nearest level first. */
+    function litEdgesFor(node: GraphSceneNode): { edge: number; level: number }[] {
+      const hanging = childEdges.get(node.id) ?? [];
+      const lit = hanging.map((edge) => ({ edge, level: 0 }));
+      // The hub is the exception (and the only node where it matters): two levels
+      // from the root is the ring plus everything hanging off it, which is most of
+      // the graph lit at once - the opposite of pointing somewhere.
+      if (node.parentId !== null) {
+        for (const edge of hanging) {
+          for (const below of childEdges.get(edges[edge]!.targetId) ?? []) {
+            lit.push({ edge: below, level: 1 });
+          }
+        }
+      }
+      return lit;
+    }
+
+    let widestFanout = 0;
+    for (const node of nodes) {
+      widestFanout = Math.max(widestFanout, litEdgesFor(node).length);
+    }
+    const flowPositionData = new Float32Array(widestFanout * EDGE_VERTICES * 3);
+    const flowDistanceData = new Float32Array(widestFanout * EDGE_VERTICES);
+
+    // The buffers are built by hand rather than through `setPositions`/`setColors`,
+    // which allocate a fresh `InstancedInterleavedBuffer` per call: the overlay is
+    // refilled on every click, and this way the arrays are written in place and
+    // only a `needsUpdate` flag is touched. The interleaving is the one those
+    // helpers use - a segment's two ends sit side by side in one buffer.
+    const flowGeometry = new LineSegmentsGeometry();
+    const flowPositionBuffer = new InstancedInterleavedBuffer(
+      flowPositionData,
+      6,
+      1,
+    );
+    flowGeometry.setAttribute(
+      "instanceStart",
+      new InterleavedBufferAttribute(flowPositionBuffer, 3, 0),
+    );
+    flowGeometry.setAttribute(
+      "instanceEnd",
+      new InterleavedBufferAttribute(flowPositionBuffer, 3, 3),
+    );
+    // Not `computeLineDistances()`: that measures world length, and the dash
+    // pattern is deliberately in fractions of an edge.
+    const flowDistanceBuffer = new InstancedInterleavedBuffer(
+      flowDistanceData,
+      2,
+      1,
+    );
+    flowGeometry.setAttribute(
+      "instanceDistanceStart",
+      new InterleavedBufferAttribute(flowDistanceBuffer, 1, 0),
+    );
+    flowGeometry.setAttribute(
+      "instanceDistanceEnd",
+      new InterleavedBufferAttribute(flowDistanceBuffer, 1, 1),
+    );
+    flowGeometry.instanceCount = 0;
+
+    const flowMaterial = new LineMaterial({
+      fog: true,
+      transparent: true,
+      opacity: 0,
+      dashed: true,
+      linewidth: FLOW_WIDTH_PX,
+      dashSize: DASH_DUTY / DASH_COUNT,
+      gapSize: (1 - DASH_DUTY) / DASH_COUNT,
+      // The distances are already in the units the pattern is written in.
+      dashScale: 1,
+    });
+    const flowLines = new LineSegments2(flowGeometry, flowMaterial);
+    // On top of the solid edge it is lying exactly on.
+    flowLines.renderOrder = 1;
+    flowLines.visible = false;
+    // The geometry is refilled in place and its bounds are never recomputed, so
+    // leaving culling on would hide the dashes from whichever click happened to
+    // land outside the first fill's bounds.
+    flowLines.frustumCulled = false;
+    world.add(flowLines);
+
+    /**
+     * The dots: one instance per lit path, unlit so they read as something moving
+     * along the edge rather than as a very small node. Sized for the same widest
+     * fan-out as the dashes, since a path count can never exceed an edge count.
+     */
+    const dotGeometry = new SphereGeometry(DOT_RADIUS, 10, 8);
+    const dotMaterial = new MeshBasicMaterial({
+      fog: true,
+      transparent: true,
+      opacity: 0,
+    });
+    const dotMesh = new InstancedMesh(
+      dotGeometry,
+      dotMaterial,
+      Math.max(1, widestFanout),
+    );
+    dotMesh.count = 0;
+    dotMesh.visible = false;
+    dotMesh.frustumCulled = false;
+    world.add(dotMesh);
+
+    /**
+     * The paths the dots run, as edge indices: the first edge, then the one it
+     * continues into, or -1 where the child is a leaf and the dot stops there.
+     */
+    const dotPaths = new Int32Array(Math.max(1, widestFanout) * 2).fill(-1);
+
+    const dotPoint = new Vector3();
+    const dotFrom = new Vector3();
+    const dotControl = new Vector3();
+    const dotTo = new Vector3();
+
+    /** The point at `t` along edge `index`, from the stored control points. */
+    function arcAt(out: Vector3, index: number, t: number) {
+      const base = index * 9;
+      dotFrom.fromArray(edgeArcs, base);
+      dotControl.fromArray(edgeArcs, base + 3);
+      dotTo.fromArray(edgeArcs, base + 6);
+      const inverse = 1 - t;
+      return out
+        .copy(dotFrom)
+        .multiplyScalar(inverse * inverse)
+        .addScaledVector(dotControl, 2 * inverse * t)
+        .addScaledVector(dotTo, t * t);
+    }
+
+    type Emphasis = {
+      /** When the dashes started their run; reset when the emphasis re-targets. */
+      dashStartedAt: number;
+      /** When the dim started fading in. Survives a re-target, so moving from one
+          node to the next does not flash the scene back up in between. */
+      startedAt: number;
+      /** When the viewer let go, or null while it is being held. */
+      releasedAt: number | null;
+      /** How many edges the overlay currently holds. */
+      count: number;
+      /** Node indices that keep their colour while everything else dims. */
+      lit: Set<number>;
+    };
+    let emphasis: Emphasis | null = null;
+    /** How many of the dot instances are in use; `fillFlow` sets it. */
+    let dotCount = 0;
+    /** 0..1: how far the scene has faded toward the backdrop. */
+    let emphasisDim = 0;
+    /**
+     * The same figure before the smoothstep. Kept because a new emphasis back-dates
+     * its own start by it, which is what lets one that arrives mid-fade pick the
+     * scene up from where it actually is rather than snapping it bright and dimming
+     * it again.
+     */
+    let emphasisRamp = 0;
+
+    const paintColour = new Color();
+
+    /**
+     * The dim, applied from the base colours. Nodes are per-instance; the edges are
+     * one material, and dimming that dims the child edges too - deliberately, since
+     * the overlay is what carries them while the emphasis is up.
+     */
+    function paintDim() {
+      const lit = emphasis?.lit;
+      for (let index = 0; index < nodes.length; index += 1) {
+        const base = index * 3;
+        paintColour.setRGB(
+          baseNodeColours[base]!,
+          baseNodeColours[base + 1]!,
+          baseNodeColours[base + 2]!,
+        );
+        if (emphasisDim > 0 && !lit?.has(index)) {
+          paintColour.lerp(backdropColour, emphasisDim * DIM_STRENGTH);
+        }
+        nodeMesh.setColorAt(index, paintColour);
+      }
+      if (nodeMesh.instanceColor) nodeMesh.instanceColor.needsUpdate = true;
+
+      paintColour.copy(baseEdgeColour);
+      if (emphasisDim > 0) {
+        paintColour.lerp(backdropColour, emphasisDim * DIM_STRENGTH);
+      }
+      edgeMaterial.color.copy(paintColour);
+      // The dashes are the edge ink at full strength while every other edge is
+      // dimmed away from it - so the lit ones stand out by *not* receding, and the
+      // hue is left to the nodes and the dot. One material colour rather than a
+      // colour buffer, which also means a theme change lands on them immediately
+      // instead of at the next click.
+      flowMaterial.color.copy(baseEdgeColour);
+    }
+
+    /** Copies the clicked node's lit edges into the overlay. Returns how many. */
+    function fillFlow(index: number): number {
+      const hanging = litEdgesFor(nodes[index]!);
+
+      hanging.forEach(({ edge: edgeIndex, level }, slot) => {
+        const from = edgeIndex * EDGE_VERTICES * 3;
+        const to = slot * EDGE_VERTICES * 3;
+        // The arc was sampled once at build time; the overlay is the same vertices.
+        flowPositionData.set(
+          edgeVertices.subarray(from, from + EDGE_VERTICES * 3),
+          to,
+        );
+
+        for (let vertex = 0; vertex < EDGE_VERTICES; vertex += 1) {
+          // Written per click, not per frame: the march is a uniform on the
+          // material now, and this is the fixed part it is added to.
+          //
+          // Adding `level` is what makes the two levels one continuous run: a
+          // second-level slot sits a whole edge-length further along the pattern,
+          // so a dash appears to leave the clicked node, reach a child and carry
+          // on past it, rather than two rings of dashes starting at once. It only
+          // lines up because a level is 1 and the pattern's period divides 1.
+          flowDistanceData[slot * EDGE_VERTICES + vertex] =
+            level + edgeVertexT[vertex]!;
+        }
+      });
+
+      flowPositionBuffer.needsUpdate = true;
+      flowDistanceBuffer.needsUpdate = true;
+      flowGeometry.instanceCount = hanging.length * EDGE_SEGMENTS;
+
+      // One path per *destination*: every second-level edge, plus every first-level
+      // edge that does not continue into one. A dot that stopped at a child with
+      // grandchildren below it would contradict the dashes running past it.
+      let paths = 0;
+      for (const { edge, level } of hanging) {
+        if (level !== 0) continue;
+        const onward = hanging.filter(
+          (next) =>
+            next.level === 1 && edges[next.edge]!.sourceId === edges[edge]!.targetId,
+        );
+        if (onward.length === 0) {
+          dotPaths[paths * 2] = edge;
+          dotPaths[paths * 2 + 1] = -1;
+          paths += 1;
+          continue;
+        }
+        for (const next of onward) {
+          dotPaths[paths * 2] = edge;
+          dotPaths[paths * 2 + 1] = next.edge;
+          paths += 1;
+        }
+      }
+      dotMesh.count = paths;
+      dotCount = paths;
+
+      return hanging.length;
+    }
+
+    /**
+     * Moves the dots. `elapsed / DASH_TRAVEL_MS` is a position in edges travelled -
+     * the same clock the dash offset runs on - wrapped by each path's own length, so
+     * a dot that has two edges to cover takes two beats to come round again and the
+     * long paths drift out of step with the short ones on their own.
+     */
+    function stepDots(elapsed: number, fade: number) {
+      if (dotCount === 0) return;
+      const travelled = elapsed / DASH_TRAVEL_MS;
+
+      for (let path = 0; path < dotCount; path += 1) {
+        const first = dotPaths[path * 2]!;
+        const second = dotPaths[path * 2 + 1]!;
+        const legs = second < 0 ? 1 : 2;
+        const along = travelled % legs;
+        const leg = along < 1 ? first : second;
+        arcAt(dotPoint, leg, along < 1 ? along : along - 1);
+
+        dummy.position.copy(dotPoint);
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        dotMesh.setMatrixAt(path, dummy.matrix);
+
+        // The colour of whatever it is currently heading for, so a dot that carries
+        // on past a child changes into the grandchild's branch shade as it goes.
+        const target = indexById.get(edges[leg]!.targetId);
+        if (target !== undefined) {
+          const base = target * 3;
+          paintColour.setRGB(
+            baseNodeColours[base]!,
+            baseNodeColours[base + 1]!,
+            baseNodeColours[base + 2]!,
+          );
+          dotMesh.setColorAt(path, paintColour);
+        }
+      }
+
+      dotMesh.instanceMatrix.needsUpdate = true;
+      if (dotMesh.instanceColor) dotMesh.instanceColor.needsUpdate = true;
+      dotMaterial.opacity = fade;
+    }
+
+    /**
+     * Marches the dashes, as one uniform: the shader adds `dashOffset` to every
+     * vertex's stored distance before cutting the pattern out of it, so sliding the
+     * whole flow along is a single number per frame rather than a buffer rewrite.
+     */
+    function stepFlow(elapsed: number, fade: number) {
+      // Negative, so the pattern travels *away* from the parent. Wrapped to one
+      // dash-plus-gap period: the pattern is identical either way, and an emphasis
+      // held for an hour would otherwise hand the shader a float of four thousand
+      // and ask it for a fraction of it.
+      const period = 1 / DASH_COUNT;
+      flowMaterial.dashOffset = -((elapsed / DASH_TRAVEL_MS) % period);
+      flowMaterial.opacity = fade;
+    }
+
+    /**
+     * Reduced motion gets neither the dashes nor the dim, rather than an instant
+     * version of them: the thing being animated *is* the effect, so a zero-duration
+     * version is a flash - the specific thing the setting asks for less of.
+     */
+    function startEmphasis(index: number) {
+      if (prefersReducedMotion()) {
+        releaseEmphasis();
+        return;
+      }
+      // Whatever the dashes reach keeps its colour: the dim's job is to clear
+      // everything else out of the way of exactly that.
+      const lit = new Set<number>([index]);
+      for (const { edge } of litEdgesFor(nodes[index]!)) {
+        const reached = indexById.get(edges[edge]!.targetId);
+        if (reached !== undefined) lit.add(reached);
+      }
+
+      const now = performance.now();
+      // Re-targeting from one node to another continues the dim from wherever it
+      // is rather than restarting it: between two clicks the scene is already
+      // down, and taking it up and straight back down is a flash, not a
+      // transition. Only the dashes restart.
+      emphasis = {
+        dashStartedAt: now,
+        startedAt: now - emphasisRamp * DIM_IN_MS,
+        releasedAt: null,
+        count: fillFlow(index),
+        lit,
+      };
+      flowLines.visible = emphasis.count > 0;
+      dotMesh.visible = dotCount > 0;
+      stepFlow(0, 0);
+      stepDots(0, 0);
+      paintDim();
+      invalidate();
+    }
+
+    /**
+     * Lets go: the dim fades back out and the dashes with it, over `DIM_OUT_MS`.
+     * The teardown itself happens in `stepEmphasis`, so there is one place that
+     * puts the scene back on its token colours.
+     */
+    function releaseEmphasis() {
+      if (!emphasis || emphasis.releasedAt !== null) return;
+      // Back-dated the same way, so letting go part-way through the fade *in*
+      // fades out from there instead of jumping to fully dim first.
+      emphasis.releasedAt = performance.now() - (1 - emphasisRamp) * DIM_OUT_MS;
+      invalidate();
+    }
+
+    /**
+     * Must not call `invalidate()`: it runs inside a frame, and scheduling from
+     * there is the silent 60fps loop the `inFrame` guard exists to prevent. It
+     * reports whether it still has work instead, and `renderFrame` schedules.
+     */
+    function stepEmphasis(now: number): boolean {
+      if (!emphasis) return false;
+      const { startedAt, releasedAt, count } = emphasis;
+
+      const ramp =
+        releasedAt === null
+          ? Math.min(1, (now - startedAt) / DIM_IN_MS)
+          : Math.max(0, 1 - (now - releasedAt) / DIM_OUT_MS);
+
+      if (releasedAt !== null && ramp <= 0) {
+        emphasis = null;
+        emphasisRamp = 0;
+        emphasisDim = 0;
+        flowLines.visible = false;
+        dotMesh.visible = false;
+        paintDim();
+        return false;
+      }
+
+      // Smoothstep, for the same reason the intro sweep has one: a linear fade in
+      // and out reads as two corners rather than as the scene breathing.
+      emphasisRamp = ramp;
+      emphasisDim = ramp * ramp * (3 - 2 * ramp);
+      if (count > 0) {
+        const dashElapsed = now - emphasis.dashStartedAt;
+        const fade =
+          releasedAt === null
+            ? Math.min(1, dashElapsed / DASH_FADE_MS)
+            : Math.min(1, ramp);
+        stepFlow(dashElapsed, fade);
+        stepDots(dashElapsed, fade);
+      }
+      paintDim();
+
+      // A held emphasis with no children under it is a still picture: the dim has
+      // arrived and nothing else about it changes, so it must stop asking for
+      // frames. The dashes are the only reason to keep going indefinitely.
+      return count > 0 || releasedAt !== null || ramp < 1;
+    }
+
     // ---- colour, re-read from the DOM on every theme change -------------------
     const colour = new Color();
     function applyTokens() {
@@ -505,8 +1026,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         // gradient's middle is lighter than the page.
         fog.color.set(backdrop);
       }
+      if (backdrop) backdropColour.set(backdrop);
       const edgeColour = current["--graph-edge"];
-      if (edgeColour) edgeMaterial.color.set(edgeColour);
+      if (edgeColour) baseEdgeColour.set(edgeColour);
       const floorColour = current["--graph-floor"];
       if (floorColour) floorMaterial.color.set(floorColour);
       const shadowColour = current["--graph-shadow"];
@@ -520,21 +1042,24 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         const value = current[node.colourToken];
         if (!value) return;
         const family = node.colourTint > 0 || node.colourHueShift !== 0;
-        nodeMesh.setColorAt(
-          index,
-          colour.set(
-            family && HEX.test(value)
-              ? familyShade(
-                  value,
-                  node.colourTint,
-                  node.colourHueShift,
-                  TINT_CEILING,
-                )
-              : value,
-          ),
+        colour.set(
+          family && HEX.test(value)
+            ? familyShade(
+                value,
+                node.colourTint,
+                node.colourHueShift,
+                TINT_CEILING,
+              )
+            : value,
         );
+        baseNodeColours[index * 3] = colour.r;
+        baseNodeColours[index * 3 + 1] = colour.g;
+        baseNodeColours[index * 3 + 2] = colour.b;
       });
-      if (nodeMesh.instanceColor) nodeMesh.instanceColor.needsUpdate = true;
+      // The tokens are what the scene is drawn *from*; what it is drawn *as* is
+      // whatever the emphasis currently says, so a theme change mid-animation
+      // repaints through it rather than over it.
+      paintDim();
     }
     applyTokensRef.current = applyTokens;
     applyTokens();
@@ -569,6 +1094,21 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       frame = requestAnimationFrame(renderFrame);
     }
     invalidateRef.current = invalidate;
+
+    /**
+     * The one animation allowed to schedule from inside a frame, and only because
+     * it does not do it directly: it asks for the next frame on a timer, which
+     * lands outside this one. Everything else goes through the block at the end of
+     * `renderFrame`.
+     */
+    let emphasisTimer: ReturnType<typeof setTimeout> | null = null;
+    function paceEmphasisFrame() {
+      if (emphasisTimer !== null) return;
+      emphasisTimer = setTimeout(() => {
+        emphasisTimer = null;
+        invalidate();
+      }, EMPHASIS_FRAME_MS);
+    }
 
     function stepScales(deltaMs: number): boolean {
       if (animatingScales.size === 0) return false;
@@ -786,6 +1326,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       const introMoving = stepIntro(now);
       const cameraMoving = stepCamera(now);
       const scalesMoving = stepScales(deltaMs);
+      const emphasisMoving = stepEmphasis(now);
       // Returns true while damping is still settling.
       const dampingMoving = controls.update();
       keepOutsideRing();
@@ -816,6 +1357,10 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       // question about the animations, not about how many events fired.
       if (introMoving || cameraMoving || scalesMoving || dampingMoving) {
         invalidate();
+      } else if (emphasisMoving) {
+        // The dashes, alone, and they hold indefinitely: paced rather than run
+        // flat out. See EMPHASIS_FRAME_MS.
+        paceEmphasisFrame();
       }
     }
 
@@ -1021,9 +1566,15 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       }
       const distance = extent / Math.sin((CAMERA_FOV * Math.PI) / 360);
 
+      const previous = focusedIdRef.current;
+      if (previous !== null && previous !== node.id) {
+        const previousIndex = indexById.get(previous);
+        if (previousIndex !== undefined) setScaleTarget(previousIndex, 1);
+      }
       setFocusedId(node.id);
       focusedIdRef.current = node.id;
       setScaleTarget(index, FOCUS_SCALE);
+      startEmphasis(index);
       flyTo(centre, distance);
     }
 
@@ -1035,6 +1586,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       }
       setFocusedId(null);
       focusedIdRef.current = null;
+      releaseEmphasis();
       const direction = camera.position.clone().sub(controls.target);
       if (direction.lengthSq() === 0) direction.copy(openingDirection);
       const { target, distance } = overviewFraming(direction);
@@ -1113,6 +1665,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       const { clientWidth: width, clientHeight: height } = container!;
       if (!width || !height) return;
       renderer.setSize(width, height, false);
+      // `LineMaterial` expands its quads in clip space and needs the viewport to do
+      // it: left stale, the dashes keep the width they had at the old size.
+      flowMaterial.resolution.set(width, height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       invalidate();
@@ -1165,6 +1720,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     return () => {
       disposed = true;
       if (frame) cancelAnimationFrame(frame);
+      if (emphasisTimer !== null) clearTimeout(emphasisTimer);
       invalidateRef.current = null;
       applyTokensRef.current = null;
 
@@ -1183,6 +1739,11 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       nodeMesh.dispose();
       edgeGeometry.dispose();
       edgeMaterial.dispose();
+      flowGeometry.dispose();
+      flowMaterial.dispose();
+      dotGeometry.dispose();
+      dotMaterial.dispose();
+      dotMesh.dispose();
       floorGeometry.dispose();
       floorMaterial.dispose();
       shadowGeometry.dispose();
