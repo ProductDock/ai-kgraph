@@ -80,10 +80,71 @@ function oklabFromLinear([r, g, b]: Triple): Triple {
   ];
 }
 
-/** OKLCH lightness and chroma. */
-export function oklch(hex: string): { L: number; C: number } {
+/** Linear-light sRGB back from OKLab - the inverse of `oklabFromLinear`. */
+function linearFromOklab([L, a, b]: Triple): Triple {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+  ];
+}
+
+/**
+ * A branch hue moved along its own family: `deltaL` lighter in OKLCH lightness,
+ * `deltaHue` degrees around the hue circle, chroma untouched, never taken past
+ * `ceiling` in lightness.
+ *
+ * Lightness and hue, not a mix toward white: mixing desaturates, and the tinted end
+ * of a branch has to stay a colour to still belong to its branch - measured, a linear
+ * mix at the same visual step takes magenta from chroma 0.14 to 0.07, under the 0.1
+ * floor at which a hue reads as grey. This holds chroma across the whole ladder,
+ * which `palette.contract.test.ts` asserts.
+ *
+ * The rotation is what makes two children of one node tell apart at leaf size, where
+ * a lightness step alone reads as flat. It is bounded, and the bound is the point:
+ * measured, a green child rotated 50 degrees lands dE 6 from the yellow ring hue -
+ * close enough to look like it hangs off the wrong branch.
+ *
+ * The ceiling is what stops the ladder from walking into the light backdrop: the two
+ * highest hues would otherwise pass L 0.88 at the deepest step.
+ */
+export function familyShade(
+  hex: string,
+  deltaL: number,
+  deltaHue: number,
+  ceiling = 1,
+): string {
   const [L, a, b] = oklabFromLinear(linear(hex));
-  return { L, C: Math.hypot(a, b) };
+  const raised = Math.min(L + deltaL, ceiling);
+  if (raised <= L && deltaHue === 0) return hex.trim().toLowerCase();
+  const chroma = Math.hypot(a, b);
+  const angle = Math.atan2(b, a) + (deltaHue * Math.PI) / 180;
+  return `#${linearFromOklab([
+    raised,
+    chroma * Math.cos(angle),
+    chroma * Math.sin(angle),
+  ])
+    .map((c) =>
+      Math.round(toSrgb(c) * 255)
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+/** OKLCH lightness, chroma and hue angle in degrees. */
+export function oklch(hex: string): { L: number; C: number; h: number } {
+  const [L, a, b] = oklabFromLinear(linear(hex));
+  return { L, C: Math.hypot(a, b), h: (Math.atan2(b, a) * 180) / Math.PI };
+}
+
+/** The shorter way round the hue circle between two angles, in degrees. */
+export function hueGap(a: number, b: number): number {
+  const gap = Math.abs(a - b) % 360;
+  return gap > 180 ? 360 - gap : gap;
 }
 
 /** WCAG contrast ratio between two opaque colours. */

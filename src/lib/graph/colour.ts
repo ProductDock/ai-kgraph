@@ -1,9 +1,11 @@
 /**
  * Colour assignment (branch-colour spec §8.1, §8.2).
  *
- * Colour answers one question - "which group is this?" - and nothing else. Depth is
- * not encoded here or anywhere else in the picture; distance from the hub already
- * says it.
+ * Colour answers "which branch is this?"; the *shade* of it answers "where in that
+ * branch?". One hue is spent per ring topic, and every node under it carries that
+ * hue one step lighter per level and turned a little way around the hue circle from
+ * its siblings - so a group and everything hanging off it read as one family of
+ * related colours rather than one flat colour (intent `graph-branch-family-tint`).
  *
  * Framework-agnostic and CSS-value-free, like the rest of `lib/graph`: everything
  * below is a token *name*. `globals.css` stays the one place a colour is spelled out.
@@ -79,61 +81,146 @@ export function isGroup(node: GraphNode): boolean {
 }
 
 /**
- * A colour token per node id, over the pre-order list `flatten` already produces
- * (parents before children, which is what lets one pass suffice).
+ * How much lighter, in OKLCH lightness, each level below a branch root is drawn than
+ * the level above it (intent `graph-branch-family-tint`).
+ *
+ * A branch is one colour. Depth inside it is a shade of that colour, and position
+ * among siblings is a small turn around the hue circle - see `HUE_SPAN`. Together
+ * they are what make a group and the things hanging off it read as a family rather
+ * than as one flat blob at leaf size.
+ *
+ * 0.06 is measured, not chosen by eye: it gives OKLab dE 4 or better a level against
+ * a floor of 3, below which two levels stop separating at leaf size. What bounds it
+ * from above is `TINT_CEILING`, not the step: the chroma floor is reached by the
+ * ladder's top rung, wherever the step puts it.
+ */
+export const TINT_STEP = 0.06;
+
+/**
+ * The widest a descendant's hue may end up from its branch root, in degrees around
+ * the OKLCH hue circle.
+ *
+ * This is a containment bound, not a style knob. Measured against the ring hues: a
+ * green child rotated 50 degrees lands OKLab dE 6 from the yellow ring root while
+ * sitting dE 24 from its own - it reads as hanging off the wrong branch. At this
+ * span the worst case is dE 10 from the nearest other ring root against 21 from its
+ * own, so every shade in the picture is still nearest its own branch.
+ * `palette.contract.test.ts` asserts exactly that, over every rung of every ladder.
+ *
+ * The spend is halved at each level (see `hueSpread`), so the total is bounded by
+ * construction at 18 + 9 + 4.5 rather than by a clamp that would silently hand two
+ * siblings the same hue.
+ */
+export const HUE_SPAN = 30;
+
+/**
+ * The half-width a node's children may spread across: half of what their parent's
+ * generation had. A geometric series that sums to less than `HUE_SPAN`, which is
+ * what keeps the family bounded without clamping.
+ */
+function hueSpread(depth: number): number {
+  return HUE_SPAN / 2 ** (depth - 1);
+}
+
+/**
+ * The `index`-th of `count` siblings, spread evenly across the window. One child
+ * sits on its parent's own hue - there is nothing to tell apart.
+ */
+function fanOffset(index: number, count: number, width: number): number {
+  if (count < 2) return 0;
+  return -width + (2 * width * index) / (count - 1);
+}
+
+/**
+ * The top of the lightness ladder. Past this the two lightest hues - yellow and
+ * magenta - walk into the light backdrop, and the top of every ladder drifts toward
+ * grey: measured, an unclamped depth-4 yellow reaches L 0.88 and 1.44:1 against the
+ * page, and at 0.84 the lightest dark-mode blue falls to chroma 0.099, under the
+ * floor at which a hue stops being a hue. 0.82 is what holds both.
+ *
+ * This is the accepted cost of the family tint, not a bug: tinted descendants are
+ * deliberately *outside* the validated lightness band that the branch hues themselves
+ * still have to sit in, and they lean on the same "visible labels" relief the three
+ * low-contrast light-mode hues already lean on (see `branch-key.tsx` and the scene's
+ * label layer). The band still binds where it is load-bearing - the hub and the four
+ * ring hues, which is what the key lists.
+ */
+export const TINT_CEILING = 0.82;
+
+/** A node's fill: which branch hue, and where in that branch's family it sits. */
+export interface NodeColour {
+  /** The CSS custom property carrying the branch's hue. A name, never a value. */
+  token: string;
+  /** OKLCH lightness to add to it. 0 for the hub and every ring topic. */
+  tint: number;
+  /** Degrees to turn it around the hue circle. 0 for the hub and every ring topic. */
+  hueShift: number;
+}
+
+/**
+ * A colour per node id, over the pre-order list `flatten` already produces (parents
+ * before children, which is what lets one pass suffice).
+ *
+ * A hue is spent once per *branch*, on the ring topic, and every node under it
+ * carries that same hue one step lighter and a little way around the hue circle from
+ * its parent. So the eight slots are really only ever asked for by the ring - which
+ * tops out at four (spec C-2) - and two groups deep in different branches can share a
+ * hue without a viewer having to tell them apart, because the family and the
+ * containment of the layout both say which branch they belong to.
  *
  * Deterministic, order-stable and local: the same seed always gives the same answer,
  * and adding a node to one branch cannot move a hue already assigned in another. Only
- * a node's parent and its earlier siblings are ever consulted.
- *
- * Hues repeat across the tree - eight of them against far more groups - but never
- * between two groups a viewer can see together and mistake for each other. "Near" is
- * defined on the tree alone (parent/child, or shared parent); the layout's existing
- * containment rule, that a branch's subtree never spreads into a sibling branch's
- * slice, is what makes that also true on screen (spec §8.3).
+ * a node's parent and its own siblings are ever consulted - so adding a child *does*
+ * re-fan that one parent's children, which is the point of an even spread.
  */
-export function assignColours(nodes: GraphNode[]): Map<string, string> {
-  const colours = new Map<string, string>();
-  /** The hue slot each group took, so children and later siblings can avoid it. */
-  const slots = new Map<string, number>();
-  /** Slots already spent under a given parent, keyed by parent id. */
-  const takenByParent = new Map<string, Set<number>>();
+export function assignColours(nodes: GraphNode[]): Map<string, NodeColour> {
+  const colours = new Map<string, NodeColour>();
+  /** Slots already spent on the ring, so the next topic skips them. */
+  const taken = new Set<number>();
+  /** Sibling positions, which the flat node list does not carry. */
+  const siblings = new Map<string, string[]>();
+  for (const node of nodes) {
+    if (node.parentId === null) continue;
+    siblings.set(node.parentId, [
+      ...(siblings.get(node.parentId) ?? []),
+      node.id,
+    ]);
+  }
 
   for (const node of nodes) {
     if (node.parentId === null) {
-      colours.set(node.id, HUB_TOKEN);
+      colours.set(node.id, { token: HUB_TOKEN, tint: 0, hueShift: 0 });
       continue;
     }
 
-    if (!isGroup(node)) {
-      // A leaf carries its group's own colour. It is told apart from that group by
-      // being smaller, not by being paler: there is no lighter shade to give it. The
-      // eight hues already span the validated lightness band, so a "lighter step"
-      // comes back identical to its base for three of them, and forcing one collapses
-      // the shades into each other (spec §8.1).
-      colours.set(node.id, colours.get(node.parentId) as string);
+    const parent = colours.get(node.parentId);
+
+    if (node.depth > 1) {
+      // Same hue as the parent, one step lighter and its own turn around the
+      // circle. The hub's colour is never inherited - depth 1 is handled below -
+      // so this only ever walks a branch.
+      const brood = siblings.get(node.parentId) as string[];
+      colours.set(node.id, {
+        token: parent!.token,
+        tint: parent!.tint + TINT_STEP,
+        hueShift:
+          parent!.hueShift +
+          fanOffset(brood.indexOf(node.id), brood.length, hueSpread(node.depth)),
+      });
       continue;
     }
 
-    const taken = takenByParent.get(node.parentId) ?? new Set<number>();
-    const parentSlot = slots.get(node.parentId);
-
-    // The first slot in fixed order that neither this node's parent nor an earlier
-    // sibling has taken. Ring topics are all siblings under the root, so this one
-    // rule is also what keeps every ring topic distinct - no ring-specific case.
+    // The ring. The first slot in fixed order no earlier topic has taken, which is
+    // also what keeps every ring topic distinct without a ring-specific rule.
     let slot = 0;
-    while (slot < HUE_COUNT && (slot === parentSlot || taken.has(slot)))
-      slot += 1;
-    // Past eight distinct neighbours there is nothing left to pick that is not
-    // already in use nearby; wrapping keeps the tree renderable, and the ring - the
-    // one place where every group is visible at once - tops out at four long before
-    // this (spec C-2).
+    while (slot < HUE_COUNT && taken.has(slot)) slot += 1;
+    // Past eight topics there is nothing left that is not already on the ring;
+    // wrapping keeps the tree renderable, and the ring tops out at four long
+    // before this (spec C-2).
     if (slot >= HUE_COUNT) slot = 0;
 
     taken.add(slot);
-    takenByParent.set(node.parentId, taken);
-    slots.set(node.id, slot);
-    colours.set(node.id, hueToken(slot));
+    colours.set(node.id, { token: hueToken(slot), tint: 0, hueShift: 0 });
   }
 
   return colours;

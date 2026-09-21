@@ -62,18 +62,45 @@ changes no file in it.
   being readable at a glance and authorable in one file. Raising it is a content decision:
   bump `MAX_DEPTH` in `src/lib/graph/palette.ts`, no palette step to add and no validator
   to re-run.
-- **Colour means "which group", size means "is this a group" — neither means depth**
-  (`intent/graph-branch-colour-and-size/`). Every group gets its own hue from
-  `src/lib/graph/colour.ts`'s fixed eight-slot order, picked as the first slot its parent
-  and earlier siblings have not taken; a leaf carries its group's hue **unchanged**, and is
-  told apart by being smaller. A group is anything with children **or any topic on the
-  ring**, filled in or not — one predicate (`isGroup`) drives both colour and size, so the
-  two can never disagree on a node. Three radii, in `palette.ts`: hub, group, leaf.
-- **There is no leaf tint, and adding one is not a tuning exercise.** The validated
-  lightness band is L 0.43–0.77 light and only 0.48–0.67 dark, and the eight hues already
-  span it — yellow has 0.006 of headroom in light and 0.000 in dark. A "lighter step" comes
-  back identical to its base for three hues, and forcing one collapses the shades into each
-  other (yellow vs green, CVD ΔE 0.8 dark). Size carries "has nothing under it" instead.
+- **Colour means "which branch", its shade means "where in that branch", size means
+  "is this a group".** A hue is spent **once per ring topic**, from
+  `src/lib/graph/colour.ts`'s fixed eight-slot order (the first slot no earlier topic has
+  taken); every node below the ring carries its parent's hue one `TINT_STEP` of OKLCH
+  lightness lighter and turned a little way around the hue circle from its siblings. So a
+  group and everything hanging off it are one family of related colours. Size is
+  independent and still answers only "is this a group" — anything with children **or any
+  topic on the ring**, filled in or not (`isGroup`). Three radii, in `palette.ts`.
+- **The family moves lightness and hue, never a mix toward white.** `familyShade()` in
+  `colour-metrics.ts` moves OKLCH **L** and **h** and leaves chroma alone. Mixing
+  desaturates: measured, a white mix at the same visual step takes magenta from chroma
+  0.14 to **0.07**, under the 0.1 floor at which a hue reads as grey.
+- **The sibling fan is what stops a branch reading as one flat colour.** A lightness step
+  alone is invisible at leaf radius — that was the first attempt. Children spread evenly
+  across a window centred on their parent's hue, and each generation's window is **half**
+  its parent's (`hueSpread`), so the total is bounded **by construction** at 15 + 7.5 +
+  3.75 = 26.25°. Not by a clamp: a clamp hands two siblings the same hue at the bottom of
+  the tree without saying so.
+- **`HUE_SPAN` (30°) is bounded by the ring, and the bound is on the hue _angle_, not on
+  any ΔE.** The closest two ring hues sit **67°** apart, so 33.7° is where a descendant
+  becomes equidistant between its own branch and its neighbour; the fan's 26.25° leaves 7°
+  of margin, asserted. A ΔE bound would be wrong here — the lightness ladder moves a deep
+  node far from its own root in ΔE without ever making it ambiguous. Measured, at 50° a
+  green child lands ΔE 6 from the **yellow** ring hue and reads as the wrong branch.
+- **`TINT_STEP` (0.06) and `TINT_CEILING` (0.82) are both held by
+  `palette.contract.test.ts`.** The step gives ΔE ≥ 4 a level against a floor of 3. The
+  ceiling is what binds: at 0.84 the lightest dark-mode blue falls to chroma **0.099**,
+  under the grey floor, and an unclamped depth-4 yellow reaches L 0.88 and 1.44:1 against
+  the page. The ceiling **flattens the lightness ladder** of three slots per theme (light
+  2/3/4, dark 3/6/7) — those branches are separated by the hue turn alone below that
+  point. It is a hard-coded list of slots, so a fourth joining it fails the build as a
+  decision, not a surprise.
+- **Tinted descendants are deliberately outside the validated lightness band.** That gate
+  was relaxed knowingly: the band (L 0.43–0.77 light, 0.48–0.67 dark) still binds on the
+  **eight branch hues and the hub** — what the header key lists and what every CVD,
+  all-pairs and ring check runs on — and the family is held by its own assertions instead
+  (ceiling, chroma floor, per-level separation, hue containment, ring margin). In light
+  mode the deepest shades fall to ~1.4:1 against the page and lean on the same
+  visible-label relief three of the hues already lean on.
 - **The ring holds four topics before two must share a colour, and `seed.ts` already has
   four.** Ring topics are all on screen at once and listed together in the key, so they need
   all-pairs colour separation, not the adjacent-pairs kind a chart needs — and only four of
@@ -128,7 +155,8 @@ changes no file in it.
   `src/lib/graph/palette.contract.test.ts` reads `globals.css` itself and runs the
   `dataviz` skill's computable checks (ported into `colour-metrics.ts`) over both themes,
   at **both ends of the range the lit scene draws** — the token value and
-  `NODE_TERMINATOR` × it. It covers the lightness band, the chroma floor, CVD and
+  `NODE_TERMINATOR` × it — plus every rung of every branch family, at both extremes of
+  the sibling fan. It covers the lightness band, the chroma floor, CVD and
   normal-vision separation adjacent and ring-all-pairs, the hub against all four ring
   hues, the contrast-relief set, and the non-content ink ramp. Every rule below is one of
   its assertions; change a value and it names the gate that moved. The manual

@@ -21,7 +21,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HUB_TOKEN, HUE_COUNT, hueToken, NODE_TERMINATOR } from "./colour";
+import {
+  HUB_TOKEN,
+  HUE_COUNT,
+  hueToken,
+  HUE_SPAN,
+  NODE_TERMINATOR,
+  TINT_CEILING,
+  TINT_STEP,
+} from "./colour";
 import {
   adjacentPairs,
   allPairs,
@@ -30,6 +38,9 @@ import {
   CONTRAST_MIN,
   CVD_FLOOR,
   contrast,
+  deltaE,
+  familyShade,
+  hueGap,
   NORMAL_FLOOR,
   oklch,
   shade,
@@ -238,6 +249,161 @@ describe("the scene's non-content ink", () => {
         `${token} against the quietest node`,
       ).toBeLessThan(quietestNode);
     }
+  });
+});
+
+/**
+ * The branch-family tint (intent `graph-branch-family-tint`).
+ *
+ * This is the one place the palette contract is deliberately *looser* than the
+ * validator: a tinted descendant sits above the lightness band on purpose, which is
+ * what makes a branch read as one family of colours rather than one flat colour. The
+ * band still binds on the hues themselves - the block above - and those are what the
+ * header key lists and what every all-pairs and CVD check runs on, because nothing a
+ * descendant does may change which branch it belongs to.
+ *
+ * What replaces the band here is written below: the ladder stays inside its ceiling,
+ * every rung stays a colour rather than drifting to grey, consecutive rungs stay far
+ * enough apart to be seen as different, and - the load-bearing one - every shade in
+ * the picture stays nearer its own branch root than any other ring hue. Those are
+ * the properties `TINT_STEP` and `HUE_SPAN` were sized against, so this is the test
+ * that fails if either is moved.
+ */
+describe("the branch-family tint", () => {
+  /** MAX_DEPTH is 4 and the ring topic is untinted, so four rungs including it. */
+  const RUNGS = 4;
+
+  /**
+   * The furthest a node at `depth` can have turned from its branch root: its own
+   * generation's half-width plus every generation above it. Built from `HUE_SPAN`
+   * the same way `assignColours` spends it, so the two cannot drift apart.
+   */
+  const reach = (depth: number) => {
+    let total = 0;
+    for (let d = 2; d <= depth; d += 1) total += HUE_SPAN / 2 ** (d - 1);
+    return total;
+  };
+
+  /** One branch's ladder, at the extreme of the fan in both directions. */
+  const ladder = (theme: (typeof THEMES)[number], slot: number, sign: number) =>
+    Array.from({ length: RUNGS }, (_, rung) =>
+      familyShade(
+        resolve(theme, hueToken(slot)),
+        TINT_STEP * rung,
+        sign * reach(rung + 1),
+        TINT_CEILING,
+      ),
+    );
+
+  const every = (theme: (typeof THEMES)[number]) =>
+    Array.from({ length: HUE_COUNT }, (_, slot) => slot).flatMap((slot) =>
+      [-1, 0, 1].map((sign) => ({ slot, rungs: ladder(theme, slot, sign) })),
+    );
+
+  it("spends less hue at each level, so the family is bounded by construction", () => {
+    // Not a clamp: a clamp would hand two siblings the same hue at the bottom of
+    // the tree without saying so.
+    expect(reach(RUNGS)).toBeLessThan(HUE_SPAN);
+    expect(reach(2)).toBeGreaterThan(reach(RUNGS) - reach(2));
+  });
+
+  it.each(THEMES)("%s: never climbs past the ceiling", (theme) => {
+    for (const { rungs } of every(theme)) {
+      for (const hue of rungs) {
+        expect(oklch(hue).L, `${hue} lightness`).toBeLessThanOrEqual(
+          TINT_CEILING + 0.005,
+        );
+      }
+    }
+  });
+
+  it.each(THEMES)("%s: keeps every rung above the chroma floor", (theme) => {
+    // Lightness and hue, not a mix toward white, is what makes this hold: the
+    // lightest rungs are where a mix would have desaturated into grey.
+    for (const { rungs } of every(theme)) {
+      for (const hue of rungs) {
+        expect(oklch(hue).C, `${hue} chroma`).toBeGreaterThanOrEqual(
+          CHROMA_FLOOR,
+        );
+      }
+    }
+  });
+
+  /**
+   * Where the ceiling bites: the hues that start high enough that the deepest rungs
+   * would pass it, so their lightness ladder flattens and the hue turn is all that
+   * separates those levels. Written as slot numbers rather than derived, because
+   * flattening a ladder is a thing to decide, not to discover.
+   */
+  const FLATTENED = { light: [2, 3, 4], dark: [3, 6, 7] } as const;
+
+  it.each(THEMES)("%s: only the documented ladders flatten out", (theme) => {
+    const flattened = Array.from({ length: HUE_COUNT }, (_, slot) => ({
+      slot,
+      base: oklch(resolve(theme, hueToken(slot))).L,
+    }))
+      .filter((row) => row.base + TINT_STEP * (RUNGS - 1) > TINT_CEILING)
+      .map((row) => row.slot);
+    expect(flattened).toEqual([...FLATTENED[theme]]);
+  });
+
+  it.each(THEMES)("%s: separates one level from the next", (theme) => {
+    // Below this a parent and its children are one flat blob at leaf size; the
+    // point of the family is that a level is visible as a level.
+    const SEEN = 3;
+    for (const { slot, rungs } of every(theme)) {
+      const base = oklch(rungs[0]!).L;
+      for (const [index, [above, below]] of adjacentPairs(rungs).entries()) {
+        // Past the ceiling the lightness ladder is flat by design - the hue turn
+        // is what is left to separate those rungs, and it is checked with them.
+        if (base + TINT_STEP * (index + 1) > TINT_CEILING) continue;
+        expect(
+          deltaE(above, below),
+          `slot ${slot}: ${above} vs ${below}`,
+        ).toBeGreaterThanOrEqual(SEEN);
+      }
+    }
+  });
+
+  it.each(THEMES)("%s: never lets a node drift onto another branch", (theme) => {
+    // The one that matters. A descendant may be lighter and turned, but it has to
+    // stay on its own branch's side of the hue circle - otherwise it reads as
+    // hanging off a different topic, which is the whole thing colour is for here.
+    //
+    // Angle, not dE: the lightness ladder moves a deep node a long way from its own
+    // root in dE without making it ambiguous, so a dE comparison would fail nodes
+    // that are perfectly legible and pass ones that are not.
+    const ring = Array.from({ length: RING_SLOTS }, (_, slot) =>
+      oklch(resolve(theme, hueToken(slot))).h,
+    );
+    for (const { slot, rungs } of every(theme)) {
+      if (slot >= RING_SLOTS) continue;
+      for (const hue of rungs) {
+        const own = hueGap(oklch(hue).h, ring[slot]!);
+        for (const [other, root] of ring.entries()) {
+          if (other === slot) continue;
+          expect(
+            hueGap(oklch(hue).h, root),
+            `${hue} (branch ${slot}) against branch ${other}`,
+          ).toBeGreaterThan(own);
+        }
+      }
+    }
+  });
+
+  it.each(THEMES)("%s: keeps a margin on the closest two branches", (theme) => {
+    // The margin the span was sized against, asserted rather than remembered: if a
+    // future hue lands closer to its ring neighbour than twice the fan's reach,
+    // this fails before anything drifts.
+    const ring = Array.from({ length: RING_SLOTS }, (_, slot) =>
+      oklch(resolve(theme, hueToken(slot))).h,
+    );
+    const closest = Math.min(
+      ...allPairs(ring).map(([a, b]) => hueGap(a, b)),
+    );
+    expect(closest / 2, "half the closest ring gap").toBeGreaterThan(
+      reach(RUNGS),
+    );
   });
 });
 
