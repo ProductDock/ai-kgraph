@@ -33,7 +33,7 @@ import {
   TINT_CEILING,
 } from "@/lib/graph/colour";
 import { familyShade } from "@/lib/graph/colour-metrics";
-import type { GraphScene } from "@/lib/graph/types";
+import type { GraphScene, GraphSceneNode } from "@/lib/graph/types";
 import {
   declutter,
   GraphLabels,
@@ -688,8 +688,30 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       return !done;
     }
 
-    function updateLabels(now: number, viewDistance: number) {
-      if (now - lastLabelsAt < LABEL_INTERVAL_MS) return;
+    /**
+     * Which nodes hold a label. Frozen for the duration of a camera move and
+     * re-solved when it lands.
+     *
+     * `selectLabelled` ranks by distance to the camera, and mid-flight that ranking
+     * is both meaningless - the viewer is going somewhere, not standing where the
+     * ranking is computed - and unstable, reordering every frame. Re-solving it
+     * while the camera moves is what puts labels in and out of the pool dozens of
+     * times over a 600ms fly-to. Membership is frozen; positions and opacity are
+     * still solved every frame, so the labels that are up stay glued to their
+     * circles.
+     */
+    let frozenSelection: GraphSceneNode[] | null = null;
+
+    function updateLabels(
+      now: number,
+      viewDistance: number,
+      cameraMoving: boolean,
+    ) {
+      // The throttle exists to keep the label layer off the critical path while the
+      // scene is idle. During a camera move it is the thing that makes the labels
+      // swim: the canvas is drawn at 60fps and the text up to 33ms behind it, so
+      // every label visibly slides off its circle and snaps back.
+      if (!cameraMoving && now - lastLabelsAt < LABEL_INTERVAL_MS) return;
       lastLabelsAt = now;
 
       const handle = labelsRef.current;
@@ -705,46 +727,50 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       const { clientWidth: width, clientHeight: height } = container!;
       const projected = new Vector3();
 
+      if (!cameraMoving) frozenSelection = null;
+      const selected =
+        frozenSelection ??
+        selectLabelled(nodes, cameraPosition, focusedIdRef.current);
+      if (cameraMoving) frozenSelection = selected;
+
       handle.apply(
         declutter(
-          selectLabelled(nodes, cameraPosition, focusedIdRef.current).map(
-            (node) => {
-              projected.set(...node.position);
-              const distance = projected.distanceTo(camera.position);
-              // The radius as *drawn*: the hover and focus bumps scale the mesh,
-              // and a base-radius offset would let a hovered circle grow into its
-              // own label (spec FR-2).
-              const drawnRadius =
-                node.radius * scales[indexById.get(node.id)!]!;
-              const offset = labelOffsetPx(
-                drawnRadius,
-                distance,
-                height,
-                CAMERA_FOV,
-              );
-              projected.project(camera);
+          selected.map((node) => {
+            projected.set(...node.position);
+            const distance = projected.distanceTo(camera.position);
+            // The radius as *drawn*: the hover and focus bumps scale the mesh,
+            // and a base-radius offset would let a hovered circle grow into its
+            // own label (spec FR-2).
+            const drawnRadius = node.radius * scales[indexById.get(node.id)!]!;
+            const offset = labelOffsetPx(
+              drawnRadius,
+              distance,
+              height,
+              CAMERA_FOV,
+            );
+            projected.project(camera);
 
-              const behindCamera = projected.z > 1;
-              // The hub's name is exempt from the distance fade - it is the label a
-              // viewer takes their bearings from, and a hub whose name dissolves as
-              // you back away is a dot with a caption again (spec FR-1). Only
-              // the fade is exempt: a hub genuinely behind the camera still goes,
-              // or its name would float over whatever is in front of it.
-              const isRoot = node.parentId === null;
-              const opacity = behindCamera
-                ? 0
-                : isRoot
-                  ? 1
-                  : Math.min(1, Math.max(0, (far - distance) / (far - near)));
+            const behindCamera = projected.z > 1;
+            // The hub's name is exempt from the distance fade - it is the label a
+            // viewer takes their bearings from, and a hub whose name dissolves as
+            // you back away is a dot with a caption again (spec FR-1). Only
+            // the fade is exempt: a hub genuinely behind the camera still goes,
+            // or its name would float over whatever is in front of it.
+            const isRoot = node.parentId === null;
+            const opacity = behindCamera
+              ? 0
+              : isRoot
+                ? 1
+                : Math.min(1, Math.max(0, (far - distance) / (far - near)));
 
-              return {
-                text: node.name,
-                x: ((projected.x + 1) / 2) * width,
-                y: ((1 - projected.y) / 2) * height + offset,
-                opacity,
-              };
-            },
-          ),
+            return {
+              id: node.id,
+              text: node.name,
+              x: ((projected.x + 1) / 2) * width,
+              y: ((1 - projected.y) / 2) * height + offset,
+              opacity,
+            };
+          }),
         ),
       );
     }
@@ -781,7 +807,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       fog.far = viewDistance * FOG_FAR;
 
       renderer.render(world, camera);
-      updateLabels(now, viewDistance);
+      // The intro sweep counts: it moves the camera the same way a fly-to does, and
+      // re-ranking the pool under it churns the labels just as badly.
+      updateLabels(now, viewDistance, cameraMoving || introMoving);
       inFrame = false;
 
       // The only place the next frame is scheduled: whether one is needed is a

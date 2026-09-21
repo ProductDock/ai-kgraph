@@ -196,6 +196,18 @@ changes no file in it.
   _drawn_ radius (base radius × its live hover/focus scale) to screen pixels and adds a
   proportional gap, so a hovered circle cannot grow into its own name — and the hub is not
   an exception (`intent/graph-labels-under-nodes/`).
+- **The label pool is keyed by node id, and its membership is frozen while the camera
+  moves.** Both halves exist for the same reason: `selectLabelled` ranks by distance to
+  the camera, so mid-fly-to that ranking churns every frame. A pool keyed by array
+  position hands span _n_ a different node on every swap — measured on screen as the
+  labels darting sideways for the whole 600ms flight. `assignSlots` keeps a node in the
+  span it already holds; `frozenSelection` in `graph-scene.tsx` re-solves membership only
+  when the camera lands. Positions and opacity are still solved every frame, and the
+  30Hz `LABEL_INTERVAL_MS` throttle is **skipped while the camera is moving** — at 60fps
+  canvas and 30Hz labels the text slides off its own circle and snaps back. `declutter`
+  is stateless, so its on/off churn is smoothed by a `LABEL_FADE_MS` opacity transition
+  rather than by hysteresis; a span that changes hands is pinned at zero and faded up, or
+  it would cross-fade one node's name into another's.
 - **Single click is spent on camera focus.** The deferred node popup gets **double-click
   on desktop and long-press on tablet** — decided, not built. Picking already resolves to
   a node id in one handler in `graph-scene.tsx`, which is where it attaches.
