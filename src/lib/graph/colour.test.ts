@@ -4,7 +4,9 @@ import {
   HUB_TOKEN,
   HUE_COUNT,
   hueToken,
+  HUE_SPAN,
   isGroup,
+  TINT_STEP,
 } from "@/lib/graph/colour";
 import { GROUP_RADIUS, LEAF_RADIUS, radiusForNode } from "@/lib/graph/palette";
 import { buildScene } from "@/lib/graph/scene";
@@ -42,84 +44,99 @@ const seeds: [string, GraphNode[]][] = [
 ];
 
 describe("assignColours", () => {
-  // V-1
-  it.each(seeds)("gives every group a hue of its own in %s", (_label, tree) => {
+  // V-1 - a hue is spent per branch, on the ring topic, and nowhere else.
+  it.each(seeds)("gives every ring topic a hue of its own in %s", (_l, tree) => {
     const assigned = assignColours(tree);
+    const ring = tree.filter((node) => node.depth === 1);
 
-    for (const node of tree) {
-      if (node.parentId === null) {
-        expect(assigned.get(node.id)).toBe(HUB_TOKEN);
-        continue;
-      }
-      if (!isGroup(node)) continue;
-      expect(HUES.has(assigned.get(node.id)!)).toBe(true);
+    expect(ring.length).toBeGreaterThan(1);
+    for (const topic of ring) {
+      expect(HUES.has(assigned.get(topic.id)!.token)).toBe(true);
+      expect(assigned.get(topic.id)!.tint).toBe(0);
     }
+    expect(new Set(ring.map((t) => assigned.get(t.id)!.token)).size).toBe(
+      ring.length,
+    );
   });
 
   // FR-4: the hub's colour appears nowhere else in the picture.
   it("spends the hub's colour on the hub and nothing else", () => {
-    const hub = nodes.filter((node) => colours.get(node.id) === HUB_TOKEN);
+    const hub = nodes.filter((node) => colours.get(node.id)!.token === HUB_TOKEN);
 
     expect(hub).toHaveLength(1);
     expect(hub[0]!.depth).toBe(0);
+    expect(colours.get(hub[0]!.id)!.tint).toBe(0);
   });
 
-  // V-2
-  it.each(seeds)(
-    "gives every leaf its parent's own colour in %s",
-    (_label, tree) => {
-      const assigned = assignColours(tree);
+  // V-2 - every node below the ring carries its branch's hue, one step lighter
+  // than the node it hangs off. This is the family tint: a group and its children
+  // are the same colour at two shades, never two colours.
+  it.each(seeds)("shades each branch down from its topic in %s", (_l, tree) => {
+    const assigned = assignColours(tree);
 
-      for (const node of tree) {
-        if (node.parentId === null || isGroup(node)) continue;
-        expect(assigned.get(node.id)).toBe(assigned.get(node.parentId));
-      }
-    },
-  );
-
-  // V-3 - a node with children takes a new hue, never its parent's.
-  it("never shades a group down from its parent", () => {
-    const rag = named("RAG");
-    const vectorDb = named("Vector db");
-
-    expect(colours.get(vectorDb.id)).not.toBe(colours.get(rag.id));
-    for (const leaf of ["pgvector", "Qdrant", "S3 vector"]) {
-      expect(colours.get(named(leaf).id)).toBe(colours.get(vectorDb.id));
-      expect(colours.get(named(leaf).id)).not.toBe(colours.get(rag.id));
+    for (const node of tree) {
+      if (node.depth < 2) continue;
+      const own = assigned.get(node.id)!;
+      const parent = assigned.get(node.parentId!)!;
+      expect(own.token).toBe(parent.token);
+      expect(own.tint).toBeCloseTo(parent.tint + TINT_STEP);
+      // Bounded by construction, not by a clamp - see `hueSpread`. A clamp would
+      // hand two siblings the same hue at the bottom of the tree in silence.
+      expect(Math.abs(own.hueShift)).toBeLessThan(HUE_SPAN);
     }
   });
 
-  // V-4
-  it.each(seeds)(
-    "never repeats a hue between neighbours in %s",
-    (_label, tree) => {
-      const assigned = assignColours(tree);
-      const parents = new Map(tree.map((node) => [node.id, node.parentId]));
-      const siblingHues = new Map<string, Set<string>>();
+  // The fan: two children of one node are never handed the same colour, which is
+  // what a lightness step alone could not give them at leaf size.
+  it.each(seeds)("turns each child of a node its own way in %s", (_l, tree) => {
+    const assigned = assignColours(tree);
+    const broods = new Map<string, number[]>();
 
-      for (const node of tree) {
-        if (node.parentId === null || !isGroup(node)) continue;
-        const hue = assigned.get(node.id)!;
+    for (const node of tree) {
+      if (node.depth < 2) continue;
+      const brood = broods.get(node.parentId!) ?? [];
+      brood.push(assigned.get(node.id)!.hueShift);
+      broods.set(node.parentId!, brood);
+    }
 
-        const parentId = parents.get(node.id)!;
-        const parent = tree.find((other) => other.id === parentId)!;
-        if (isGroup(parent)) expect(hue).not.toBe(assigned.get(parent.id));
+    expect(broods.size).toBeGreaterThan(0);
+    for (const [parentId, brood] of broods) {
+      expect(new Set(brood).size, `${parentId}'s children`).toBe(brood.length);
+    }
+  });
 
-        const seen = siblingHues.get(parentId) ?? new Set<string>();
-        expect(seen.has(hue)).toBe(false);
-        seen.add(hue);
-        siblingHues.set(parentId, seen);
-      }
-    },
-  );
+  // V-3 - depth is the only thing that moves inside a branch, and it moves in one
+  // direction: a leaf and its group differ by a shade, a group and its parent too.
+  it("draws a whole branch in one hue at one shade per level", () => {
+    const rag = named("RAG");
+    const vectorDb = named("Vector db");
+    const topic = named("n Node");
 
-  // FR-5 - every ring topic is distinct, childless ones included.
-  it("gives every ring topic a colour no other ring topic has", () => {
-    const ring = nodes.filter((node) => node.depth === 1);
-    const hues = ring.map((node) => colours.get(node.id));
+    expect(colours.get(vectorDb.id)!.token).toBe(colours.get(rag.id)!.token);
+    expect(colours.get(rag.id)!.token).toBe(colours.get(topic.id)!.token);
+    expect(colours.get(vectorDb.id)!.tint).toBeGreaterThan(
+      colours.get(rag.id)!.tint,
+    );
+    for (const leaf of ["pgvector", "Qdrant", "S3 vector"]) {
+      expect(colours.get(named(leaf).id)!.token).toBe(
+        colours.get(vectorDb.id)!.token,
+      );
+      expect(colours.get(named(leaf).id)!.tint).toBeCloseTo(
+        colours.get(vectorDb.id)!.tint + TINT_STEP,
+      );
+    }
+  });
 
-    expect(ring.length).toBeGreaterThan(1);
+  // V-4 - the ring is the one surface where every group is on screen at once, so
+  // it is the one place a hue may not repeat. Deeper down, two branches sharing a
+  // hue is expected: the tint and the layout's containment say which is which.
+  it.each(seeds)("never repeats a hue on the ring in %s", (_label, tree) => {
+    const assigned = assignColours(tree);
+    const ring = tree.filter((node) => node.depth === 1);
+    const hues = ring.map((node) => assigned.get(node.id)!.token);
+
     expect(new Set(hues).size).toBe(ring.length);
+    expect(hues).not.toContain(HUB_TOKEN);
   });
 
   // V-5
@@ -139,7 +156,7 @@ describe("assignColours", () => {
 
     expect(untouched.length).toBeGreaterThan(0);
     for (const node of untouched) {
-      expect(after.get(node.id)).toBe(colours.get(node.id));
+      expect(after.get(node.id)).toEqual(colours.get(node.id));
     }
   });
 });
@@ -216,6 +233,24 @@ describe("buildScene", () => {
         true,
       );
       expect(byId.has(node.id)).toBe(true);
+    }
+  });
+
+  // The key lists the ring, and it draws the token flat - so a tinted ring topic
+  // would be a topic whose swatch is not the colour it is drawn in.
+  it("leaves the hub and the ring untinted, so the key matches the scene", () => {
+    const { nodes: scene } = buildScene(seed);
+
+    for (const node of scene) {
+      if (node.depth <= 1) {
+        expect(node.colourTint, node.name).toBe(0);
+        expect(node.colourHueShift, node.name).toBe(0);
+      } else {
+        // Deeper down only the tint is guaranteed to move: an only child, and the
+        // middle of an odd brood, sit on their parent's own hue and are told apart
+        // by being lighter.
+        expect(node.colourTint, node.name).toBeGreaterThan(0);
+      }
     }
   });
 });

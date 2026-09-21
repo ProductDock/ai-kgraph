@@ -62,18 +62,45 @@ changes no file in it.
   being readable at a glance and authorable in one file. Raising it is a content decision:
   bump `MAX_DEPTH` in `src/lib/graph/palette.ts`, no palette step to add and no validator
   to re-run.
-- **Colour means "which group", size means "is this a group" — neither means depth**
-  (`intent/graph-branch-colour-and-size/`). Every group gets its own hue from
-  `src/lib/graph/colour.ts`'s fixed eight-slot order, picked as the first slot its parent
-  and earlier siblings have not taken; a leaf carries its group's hue **unchanged**, and is
-  told apart by being smaller. A group is anything with children **or any topic on the
-  ring**, filled in or not — one predicate (`isGroup`) drives both colour and size, so the
-  two can never disagree on a node. Three radii, in `palette.ts`: hub, group, leaf.
-- **There is no leaf tint, and adding one is not a tuning exercise.** The validated
-  lightness band is L 0.43–0.77 light and only 0.48–0.67 dark, and the eight hues already
-  span it — yellow has 0.006 of headroom in light and 0.000 in dark. A "lighter step" comes
-  back identical to its base for three hues, and forcing one collapses the shades into each
-  other (yellow vs green, CVD ΔE 0.8 dark). Size carries "has nothing under it" instead.
+- **Colour means "which branch", its shade means "where in that branch", size means
+  "is this a group".** A hue is spent **once per ring topic**, from
+  `src/lib/graph/colour.ts`'s fixed eight-slot order (the first slot no earlier topic has
+  taken); every node below the ring carries its parent's hue one `TINT_STEP` of OKLCH
+  lightness lighter and turned a little way around the hue circle from its siblings. So a
+  group and everything hanging off it are one family of related colours. Size is
+  independent and still answers only "is this a group" — anything with children **or any
+  topic on the ring**, filled in or not (`isGroup`). Three radii, in `palette.ts`.
+- **The family moves lightness and hue, never a mix toward white.** `familyShade()` in
+  `colour-metrics.ts` moves OKLCH **L** and **h** and leaves chroma alone. Mixing
+  desaturates: measured, a white mix at the same visual step takes magenta from chroma
+  0.14 to **0.07**, under the 0.1 floor at which a hue reads as grey.
+- **The sibling fan is what stops a branch reading as one flat colour.** A lightness step
+  alone is invisible at leaf radius — that was the first attempt. Children spread evenly
+  across a window centred on their parent's hue, and each generation's window is **half**
+  its parent's (`hueSpread`), so the total is bounded **by construction** at 15 + 7.5 +
+  3.75 = 26.25°. Not by a clamp: a clamp hands two siblings the same hue at the bottom of
+  the tree without saying so.
+- **`HUE_SPAN` (30°) is bounded by the ring, and the bound is on the hue _angle_, not on
+  any ΔE.** The closest two ring hues sit **67°** apart, so 33.7° is where a descendant
+  becomes equidistant between its own branch and its neighbour; the fan's 26.25° leaves 7°
+  of margin, asserted. A ΔE bound would be wrong here — the lightness ladder moves a deep
+  node far from its own root in ΔE without ever making it ambiguous. Measured, at 50° a
+  green child lands ΔE 6 from the **yellow** ring hue and reads as the wrong branch.
+- **`TINT_STEP` (0.06) and `TINT_CEILING` (0.82) are both held by
+  `palette.contract.test.ts`.** The step gives ΔE ≥ 4 a level against a floor of 3. The
+  ceiling is what binds: at 0.84 the lightest dark-mode blue falls to chroma **0.099**,
+  under the grey floor, and an unclamped depth-4 yellow reaches L 0.88 and 1.44:1 against
+  the page. The ceiling **flattens the lightness ladder** of three slots per theme (light
+  2/3/4, dark 3/6/7) — those branches are separated by the hue turn alone below that
+  point. It is a hard-coded list of slots, so a fourth joining it fails the build as a
+  decision, not a surprise.
+- **Tinted descendants are deliberately outside the validated lightness band.** That gate
+  was relaxed knowingly: the band (L 0.43–0.77 light, 0.48–0.67 dark) still binds on the
+  **eight branch hues and the hub** — what the header key lists and what every CVD,
+  all-pairs and ring check runs on — and the family is held by its own assertions instead
+  (ceiling, chroma floor, per-level separation, hue containment, ring margin). In light
+  mode the deepest shades fall to ~1.4:1 against the page and lean on the same
+  visible-label relief three of the hues already lean on.
 - **The ring holds four topics before two must share a colour, and `seed.ts` already has
   four.** Ring topics are all on screen at once and listed together in the key, so they need
   all-pairs colour separation, not the adjacent-pairs kind a chart needs — and only four of
@@ -118,22 +145,47 @@ changes no file in it.
   **renaming the root moves every id in the tree** — that is a find-and-replace across
   the tests, and it would be a breaking change the day an id becomes a deep link.
 - **Graph tokens in `globals.css`:** `--graph-hub`, `--graph-branch-0…7` (the validated
-  categorical palette), `--graph-edge` and `--graph-label-halo`, declared in all three
-  scopes. They are **not** bridged into `@theme inline` — they are not shadcn slots,
-  following the `--accent-secondary` precedent. `--graph-edge` carries its own opaque hex
-  per scope rather than aliasing `--gridline`, because `THREE.Color` cannot parse the
-  functional `rgb()` with alpha that `--gridline` uses in dark mode.
+  categorical palette), `--graph-edge`, `--graph-floor`, `--graph-shadow`,
+  `--graph-space-near`/`-far` and `--graph-label-halo`, declared in all three scopes.
+  They are **not** bridged into `@theme inline` — they are not shadcn slots, following
+  the `--accent-secondary` precedent. Each carries its own opaque hex per scope rather
+  than aliasing `--gridline`, because `THREE.Color` cannot parse the functional `rgb()`
+  with alpha that `--gridline` uses in dark mode.
+- **Nothing about colour is enforced by remembering to check it.**
+  `src/lib/graph/palette.contract.test.ts` reads `globals.css` itself and runs the
+  `dataviz` skill's computable checks (ported into `colour-metrics.ts`) over both themes,
+  at **both ends of the range the lit scene draws** — the token value and
+  `NODE_TERMINATOR` × it — plus every rung of every branch family, at both extremes of
+  the sibling fan. It covers the lightness band, the chroma floor, CVD and
+  normal-vision separation adjacent and ring-all-pairs, the hub against all four ring
+  hues, the contrast-relief set, and the non-content ink ramp. Every rule below is one of
+  its assertions; change a value and it names the gate that moved. The manual
+  "re-run `validate_palette.js`" step is gone.
 - **The palette's slot _order_ is a safety mechanism, not a preference.** The values are the
-  `dataviz` skill's default categorical set; the order is ours, because the skill's own
-  order fails the ring's all-pairs check at the fourth topic (yellow vs orange,
-  normal-vision ΔE 10.6 dark, floor 15). Re-order or re-value anything and re-run
-  `validate_palette.js` against **both** surfaces — adjacent for all eight, `--pairs all`
-  for the first four.
+  `dataviz` skill's default categorical set with **two measured deviations** recorded in
+  `globals.css` (violet had no headroom to be shaded into; orange lost 3:1 against the
+  backdrop); the order is ours, because the skill's own order fails the ring's all-pairs
+  check at the fourth topic (yellow vs orange, normal-vision ΔE 10.6 dark, floor 15).
+- **`--graph-hub` is not the brand's `#027ac2`, and that is not a style choice.** Slot 0 is
+  always handed to the first ring topic, which sits one edge from the hub; `#027ac2`
+  against that blue measures ΔE 3.6 normal-vision against a floor of 15. It is the brand
+  blue darkened (`#01547f`) in light and lightened (`#8fd0f5`) in dark. Reserving slot 0
+  for the hub instead does **not** work — measured: the dark ring's remaining four fail
+  at aqua vs magenta, ΔE 1.6 deutan.
+- **The nodes are lit, so the palette is a _range_, not eight values.** A node's lit point
+  is exactly its token colour and its terminator is `NODE_TERMINATOR` of it in linear
+  light (`src/lib/graph/colour.ts`). Both ends are validated. Lowering that constant
+  pushes the darkest hues out of the lightness band — it is a palette number that happens
+  to be consumed by the renderer, which is why it does not live in `graph-scene.tsx`.
+- **The scene's non-content ink is an ordered ramp**, shadow < floor < edge < every node,
+  measured as contrast against the backdrop. An edge is content; the floor and its marks
+  are depth cues, and a floor louder than an edge turns the picture into a diagram drawn
+  on graph paper.
 - **The header key is load-bearing for accessibility, not decoration.** Magenta, yellow and
-  aqua sit below 3:1 against the light page, and the fourth ring pair sits in the
-  validator's 6–8 CVD band. Both are legal only with the "visible labels" relief the
-  validator requires, which the scene's label layer and `branch-key.tsx` supply together.
-  Dropping either re-opens that check.
+  aqua sit below 3:1 against **both ends** of the light backdrop, and the fourth ring pair
+  sits in the validator's 6–8 CVD band. Both are legal only with the "visible labels"
+  relief the validator requires, which the scene's label layer and `branch-key.tsx` supply
+  together. Dropping either re-opens that check.
 - The scene reads those tokens off the DOM (`use-theme-tokens.ts`), **not** from
   `useUiStore` — that store hardcodes `theme: "light"` and never hydrates, so it does not
   describe the DOM. Do not "simplify" it to use the store.
@@ -144,6 +196,18 @@ changes no file in it.
   _drawn_ radius (base radius × its live hover/focus scale) to screen pixels and adds a
   proportional gap, so a hovered circle cannot grow into its own name — and the hub is not
   an exception (`intent/graph-labels-under-nodes/`).
+- **The label pool is keyed by node id, and its membership is frozen while the camera
+  moves.** Both halves exist for the same reason: `selectLabelled` ranks by distance to
+  the camera, so mid-fly-to that ranking churns every frame. A pool keyed by array
+  position hands span _n_ a different node on every swap — measured on screen as the
+  labels darting sideways for the whole 600ms flight. `assignSlots` keeps a node in the
+  span it already holds; `frozenSelection` in `graph-scene.tsx` re-solves membership only
+  when the camera lands. Positions and opacity are still solved every frame, and the
+  30Hz `LABEL_INTERVAL_MS` throttle is **skipped while the camera is moving** — at 60fps
+  canvas and 30Hz labels the text slides off its own circle and snaps back. `declutter`
+  is stateless, so its on/off churn is smoothed by a `LABEL_FADE_MS` opacity transition
+  rather than by hysteresis; a span that changes hands is pinned at zero and faded up, or
+  it would cross-fade one node's name into another's.
 - **Single click is spent on camera focus.** The deferred node popup gets **double-click
   on desktop and long-press on tablet** — decided, not built. Picking already resolves to
   a node id in one handler in `graph-scene.tsx`, which is where it attaches.
@@ -185,3 +249,13 @@ The security posture (headers, CSP Report-Only, env split, server-action rules) 
 placeholder design tokens/typography come from platform-standard practice and the
 `dataviz` skill, not a reviewed security or brand policy — none exists in this repo yet.
 Treat both as a starting point, not a guarantee.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

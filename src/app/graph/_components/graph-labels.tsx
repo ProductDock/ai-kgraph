@@ -2,6 +2,7 @@
 
 import { useImperativeHandle, useRef, type RefObject } from "react";
 import type { GraphSceneNode, Vec3 } from "@/lib/graph/types";
+import { prefersReducedMotion } from "./tween";
 
 /**
  * Never more, and never a DOM node per graph node (spec FR-7, NFR-2). The pool is
@@ -10,6 +11,9 @@ import type { GraphSceneNode, Vec3 } from "@/lib/graph/types";
 export const LABEL_POOL_SIZE = 24;
 
 export interface LabelPlacement {
+  /** Which node this is. The pool is keyed by it, not by array position - see
+   * `assignSlots`. */
+  id: string;
   text: string;
   /** Screen pixels, relative to the canvas. `x` is the text's centre; `y` is its
    * top, already offset below the node's circle by `labelOffsetPx` (spec FR-2). */
@@ -93,10 +97,23 @@ function distanceTo(position: Vec3, camera: Vec3): number {
 }
 
 /**
- * Which nodes get one of the 24 labels: the root and the focused node first - they
- * are the two a viewer is orienting by - then nearest to the camera, with shallower
- * depth breaking ties so a branch boundary resolves the same way every frame rather
- * than flickering between two equidistant nodes (spec FR-7, R-4).
+ * Which nodes get one of the 24 labels: the pinned ones first - the hub, the ring
+ * topics and the focused node - then nearest to the camera, with shallower depth
+ * breaking ties so a branch boundary resolves the same way every frame rather than
+ * flickering between two equidistant nodes (spec FR-7, R-4).
+ *
+ * The ring is pinned because it is the one thing in the scene a viewer is meant to
+ * take their bearings from: it is what `branch-key.tsx` lists by name in the header
+ * and what the layout spends an even azimuth split on. Left to distance order it
+ * loses - a ring topic on the far side of the hub is further away than a dozen leaf
+ * nodes in the near branch, so the frame ends up naming `pi` and `tau` while a whole
+ * top-level topic sits unlabelled. It costs one pool slot per ring topic out of 24,
+ * and the layout's ring holds four before two of them have to share a colour
+ * (colour.ts, HUE_COUNT), so the pool is never at risk of being eaten by it.
+ *
+ * Pinning is pool membership only, not visibility: a pinned node still fades with
+ * distance and still loses a collision to whatever was placed before it. Only the
+ * hub is exempt from the fade, and it stays the only exemption.
  *
  * Pure, so it is testable without a GPU (V-14).
  */
@@ -109,8 +126,11 @@ export function selectLabelled(
   const rest: GraphSceneNode[] = [];
 
   for (const node of nodes) {
-    if (node.parentId === null || node.id === focusedId) pinned.push(node);
-    else rest.push(node);
+    if (node.parentId === null || node.depth === 1 || node.id === focusedId) {
+      pinned.push(node);
+    } else {
+      rest.push(node);
+    }
   }
 
   rest.sort((a, b) => {
@@ -173,6 +193,59 @@ export function declutter(placements: LabelPlacement[]): LabelPlacement[] {
 }
 
 /**
+ * How long a label takes to fade in or out, in milliseconds.
+ *
+ * `declutter` is stateless, so a label that loses a collision one frame and wins it
+ * the next snaps on and off. The fade turns that churn into a dissolve. It is
+ * cosmetic: nothing about which label is drawn depends on it, and
+ * `prefersReducedMotion` drops it to zero.
+ */
+export const LABEL_FADE_MS = 140;
+
+/**
+ * Which pooled span shows which node, keyed by node id rather than by position in
+ * the placement array.
+ *
+ * This is what stops the labels darting about during a fly-to. `selectLabelled`
+ * orders by distance to the camera, and the camera is moving, so that order churns
+ * continuously - and if span `n` simply draws placement `n`, every swap in the sort
+ * teleports two spans across the screen and exchanges their text. Keyed by id, a
+ * span only ever moves by however far its own node moved on screen.
+ *
+ * A node that leaves the set frees its slot; newcomers take the lowest free slots in
+ * the order given, which is `selectLabelled`'s own importance order. Pure, so the
+ * stability claim is testable without a DOM (V-14).
+ */
+export function assignSlots(
+  previous: readonly (string | null)[],
+  ids: readonly string[],
+): (string | null)[] {
+  const incoming = new Set(ids);
+  const next: (string | null)[] = Array.from(
+    { length: LABEL_POOL_SIZE },
+    (_, slot) => {
+      const held = previous[slot] ?? null;
+      return held !== null && incoming.has(held) ? held : null;
+    },
+  );
+
+  const kept = new Set(next.filter((id): id is string => id !== null));
+  let cursor = 0;
+  for (const id of ids) {
+    if (kept.has(id)) continue;
+    while (cursor < LABEL_POOL_SIZE && next[cursor] !== null) cursor += 1;
+    // `selectLabelled` caps its result at the pool size, so this only bites if a
+    // caller hands over more than the pool can hold - the extras are dropped
+    // rather than silently overwriting a stable slot.
+    if (cursor >= LABEL_POOL_SIZE) break;
+    next[cursor] = id;
+    cursor += 1;
+  }
+
+  return next;
+}
+
+/**
  * A single overlay of 24 absolutely-positioned elements, `pointer-events: none` so
  * it never swallows an orbit drag.
  *
@@ -187,25 +260,75 @@ export function GraphLabels({
   ref: RefObject<GraphLabelsHandle | null>;
 }) {
   const elements = useRef<(HTMLSpanElement | null)[]>([]);
+  const slots = useRef<(string | null)[]>(
+    Array.from({ length: LABEL_POOL_SIZE }, () => null),
+  );
 
   useImperativeHandle(ref, () => ({
     apply(placements) {
-      for (let index = 0; index < LABEL_POOL_SIZE; index += 1) {
-        const element = elements.current[index];
+      const byId = new Map(
+        placements.map((placement) => [placement.id, placement]),
+      );
+      const previous = slots.current;
+      const next = assignSlots(
+        previous,
+        placements.map((placement) => placement.id),
+      );
+      slots.current = next;
+
+      const fade = prefersReducedMotion()
+        ? "none"
+        : `opacity ${LABEL_FADE_MS}ms linear`;
+      let reassigned = false;
+
+      // First pass: everything but the opacity of a slot that has changed hands.
+      // A reused span must not cross-fade one node's name into another's, so a
+      // reassigned slot is pinned at zero here and faded up in the second pass.
+      for (let slot = 0; slot < LABEL_POOL_SIZE; slot += 1) {
+        const element = elements.current[slot];
         if (!element) continue;
 
-        const placement = placements[index];
-        if (!placement || placement.opacity <= 0) {
-          // Hidden rather than transparent, so it is neither hit-tested nor read.
+        const id = next[slot] ?? null;
+        const placement = id === null ? undefined : byId.get(id);
+        if (!placement) {
+          // An unused slot is hidden outright, so it is neither hit-tested nor
+          // read. A *decluttered* one keeps its text and fades, below.
           element.style.visibility = "hidden";
+          element.style.opacity = "0";
           element.textContent = "";
           continue;
         }
 
-        element.textContent = placement.text;
+        const changed = previous[slot] !== id;
+        if (changed) {
+          reassigned = true;
+          element.style.transition = "none";
+          element.style.opacity = "0";
+          element.textContent = placement.text;
+        }
         element.style.visibility = "visible";
-        element.style.opacity = String(placement.opacity);
         element.style.transform = `translate3d(${placement.x}px, ${placement.y}px, 0) translate(-50%, 0%)`;
+        if (!changed) {
+          if (element.style.transition !== fade)
+            element.style.transition = fade;
+          element.style.opacity = String(placement.opacity);
+        }
+      }
+
+      if (!reassigned) return;
+      // One forced reflow for the whole pool, and only when a slot actually
+      // changed hands: without it the zero above never commits and the browser
+      // fades from the *previous* node's opacity instead of from nothing.
+      void elements.current.find(Boolean)?.offsetWidth;
+
+      for (let slot = 0; slot < LABEL_POOL_SIZE; slot += 1) {
+        const element = elements.current[slot];
+        const id = next[slot] ?? null;
+        if (!element || id === null || previous[slot] === id) continue;
+        const placement = byId.get(id);
+        if (!placement) continue;
+        element.style.transition = fade;
+        element.style.opacity = String(placement.opacity);
       }
     },
   }));

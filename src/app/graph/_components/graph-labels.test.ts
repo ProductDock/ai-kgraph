@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildScene } from "@/lib/graph/scene";
 import type { GraphSceneNode, Vec3 } from "@/lib/graph/types";
 import {
+  assignSlots,
   declutter,
   LABEL_MAX_PX,
   LABEL_POOL_SIZE,
@@ -40,6 +41,17 @@ describe("selectLabelled", () => {
     expect(selected.map((node) => node.id)).toContain("ai");
   });
 
+  // The ring is the frame the viewer takes their bearings from - it is what the
+  // header key names - so it is in the pool whatever the camera is doing.
+  it("always includes every ring topic, however far away it is", () => {
+    const ring = nodes.filter((node) => node.depth === 1);
+    expect(ring.length).toBeGreaterThan(1);
+
+    const selected = selectLabelled(nodes, camera, null).map((node) => node.id);
+
+    for (const topic of ring) expect(selected).toContain(topic.id);
+  });
+
   it("always includes the focused node, however far away it is", () => {
     const farthest = [...nodes].sort(
       (a, b) =>
@@ -67,8 +79,12 @@ describe("selectLabelled", () => {
 
   it("prefers nearer nodes, and breaks ties on shallower depth", () => {
     const selected = selectLabelled(nodes, camera, null);
+    // The hub and the ring are pinned, so distance says nothing about them: the
+    // ordering claim is about everything the pool is free to choose.
+    const contested = (node: GraphSceneNode) =>
+      node.parentId !== null && node.depth > 1;
     const unselected = nodes.filter(
-      (node) => !selected.includes(node) && node.parentId !== null,
+      (node) => !selected.includes(node) && contested(node),
     );
 
     const distance = (node: GraphSceneNode) =>
@@ -77,9 +93,7 @@ describe("selectLabelled", () => {
         node.position[1] - camera[1],
         node.position[2] - camera[2],
       );
-    const worstSelected = Math.max(
-      ...selected.filter((node) => node.parentId !== null).map(distance),
-    );
+    const worstSelected = Math.max(...selected.filter(contested).map(distance));
 
     expect(Math.min(...unselected.map(distance))).toBeGreaterThanOrEqual(
       worstSelected,
@@ -114,7 +128,10 @@ describe("selectLabelled", () => {
 });
 
 describe("declutter", () => {
+  // The id doubles as the text: these cases are about boxes, and a distinct id per
+  // label is all `declutter` needs to carry through.
   const at = (text: string, x: number, y: number) => ({
+    id: text,
     text,
     x,
     y,
@@ -222,5 +239,50 @@ describe("labelOffsetPx", () => {
 
   it("does not divide by zero when the camera is on the node", () => {
     expect(labelOffsetPx(0.42, 0, height, fov)).toBe(MIN_GAP_PX);
+  });
+});
+
+describe("assignSlots", () => {
+  const empty = Array.from({ length: LABEL_POOL_SIZE }, () => null);
+
+  it("fills an empty pool in the order it is given", () => {
+    expect(assignSlots(empty, ["a", "b", "c"]).slice(0, 4)).toEqual([
+      "a",
+      "b",
+      "c",
+      null,
+    ]);
+  });
+
+  // The whole point. `selectLabelled` re-ranks by distance every frame the camera
+  // moves, and a pool keyed by array position would hand each span a different node
+  // on every swap - which is the labels darting sideways during a fly-to.
+  it("keeps a node in the slot it already holds, however the order churns", () => {
+    const first = assignSlots(empty, ["a", "b", "c"]);
+
+    expect(assignSlots(first, ["c", "a", "b"])).toEqual(first);
+    expect(assignSlots(first, ["b", "c", "a"])).toEqual(first);
+  });
+
+  it("frees a departed node's slot, and gives it to the next newcomer", () => {
+    const first = assignSlots(empty, ["a", "b", "c"]);
+    const next = assignSlots(first, ["a", "c", "d"]);
+
+    expect(next.slice(0, 3)).toEqual(["a", "d", "c"]);
+  });
+
+  it("never exceeds the pool, and never holds a node twice", () => {
+    const ids = Array.from({ length: LABEL_POOL_SIZE + 6 }, (_, i) => `n${i}`);
+    const slots = assignSlots(empty, ids);
+    const held = slots.filter((id): id is string => id !== null);
+
+    expect(slots).toHaveLength(LABEL_POOL_SIZE);
+    expect(new Set(held).size).toBe(held.length);
+    // The overflow is dropped rather than evicting a stable slot.
+    expect(held).toHaveLength(LABEL_POOL_SIZE);
+  });
+
+  it("empties the pool when nothing is selected", () => {
+    expect(assignSlots(assignSlots(empty, ["a", "b"]), [])).toEqual(empty);
   });
 });

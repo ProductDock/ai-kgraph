@@ -49,6 +49,19 @@ export interface GraphSceneNode extends GraphNode {
    * hex: `globals.css` stays the one place a colour is spelled out.
    */
   colourToken: string;
+  /**
+   * OKLCH lightness to add to that token before drawing: 0 on the hub and on every
+   * ring topic, one `TINT_STEP` more for each level below the ring, so a branch
+   * reads as one colour getting lighter outwards (branch-family tint).
+   */
+  colourTint: number;
+  /**
+   * Degrees to turn that token around the OKLCH hue circle before drawing: 0 on the
+   * hub and on every ring topic, and a fan across its siblings below that, so two
+   * children of one node tell apart at leaf size where a lightness step alone reads
+   * as flat. Bounded well inside `HUE_SPAN` of the branch root.
+   */
+  colourHueShift: number;
 }
 
 /**
