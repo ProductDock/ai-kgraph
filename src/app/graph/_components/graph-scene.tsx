@@ -181,8 +181,8 @@ const OPENING_POLAR = Math.PI * 0.3;
  * is the value that derivation produced before the tree was tightened, kept.
  */
 const MIN_ORBIT_DISTANCE = 23;
-const HOVER_SCALE = 1.3;
-const HOVER_MS = 120;
+/** How long a node's scale takes to reach its target - the focus bump. */
+const SCALE_MS = 120;
 const FOCUS_SCALE = 1.2;
 /**
  * The focus emphasis: clicking a node dims everything that is not it or one of its
@@ -388,7 +388,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     world.add(nodeMesh);
 
     const dummy = new Object3D();
-    /** Current and target scale multipliers, for the hover and focus bumps. */
+    /** Current and target scale multipliers, for the focus bump. */
     const scales = new Float32Array(nodes.length).fill(1);
     const scaleTargets = new Float32Array(nodes.length).fill(1);
     const animatingScales = new Set<number>();
@@ -1112,7 +1112,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
 
     function stepScales(deltaMs: number): boolean {
       if (animatingScales.size === 0) return false;
-      const step = deltaMs / Math.max(1, tweenDuration(HOVER_MS));
+      const step = deltaMs / Math.max(1, tweenDuration(SCALE_MS));
 
       for (const index of [...animatingScales]) {
         const target = scaleTargets[index]!;
@@ -1278,7 +1278,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
           selected.map((node) => {
             projected.set(...node.position);
             const distance = projected.distanceTo(camera.position);
-            // The radius as *drawn*: the hover and focus bumps scale the mesh,
+            // The radius as *drawn*: the focus bump scales the mesh,
             // and a base-radius offset would let a hovered circle grow into its
             // own label (spec FR-2).
             const drawnRadius = node.radius * scales[indexById.get(node.id)!]!;
@@ -1618,17 +1618,11 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     function onPointerMove(event: PointerEvent) {
+      // Hover only changes the cursor: the circle keeps its size, so size stays
+      // the answer to "is this a group" alone.
       const index = pick(event);
       if (index === hoveredIndex) return;
-
-      if (
-        hoveredIndex !== null &&
-        nodes[hoveredIndex]!.id !== focusedIdRef.current
-      ) {
-        setScaleTarget(hoveredIndex, 1);
-      }
       hoveredIndex = index;
-      if (index !== null) setScaleTarget(index, HOVER_SCALE);
       canvas.style.cursor = index === null ? "grab" : "pointer";
     }
 

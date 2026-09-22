@@ -62,8 +62,8 @@ export const MIN_GAP_PX = 6;
  * radius plus a gap proportional to it, so a name never lands on its own circle
  * however big that circle currently looks (spec FR-2, §9.1).
  *
- * `worldRadius` is the radius as *drawn*, hover and focus scale included - a base
- * radius would let a hovered circle grow into its own label.
+ * `worldRadius` is the radius as *drawn*, focus scale included - a base radius
+ * would let a focused circle grow into its own label.
  *
  * Pure, so it is testable without a GPU (V-3, V-4, V-5).
  */
