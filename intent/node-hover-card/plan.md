@@ -293,6 +293,39 @@ setup, and saying so is part of the proof:
 | V-14 | Idle the page with dev-tools frame counting, card closed | Zero frames render; no timer fires |
 | C-3 | Look at the "Open page" row | Report to the originator whether it reads "not built yet" or "broken" — this is the one open judgement the spec explicitly defers to a real screen |
 
+## Deviations from this plan, as built
+
+Five, all small, recorded here because a stale plan is read by later stages as the
+approved intent.
+
+1. **The whole card layer is `pointer-events: none`, including the `Card`.** The plan
+   said both halves were needed, quoting spec §9.2's "moving the pointer onto the card
+   keeps it open". That exception buys nothing in this release and costs something real:
+   §9.4 makes "Open page" static text, so there is *nothing on the card to reach*, while
+   a card that accepted pointer events would block an orbit drag started over it and
+   would stop the canvas seeing the pointer leave its node. It also contradicts the
+   plan's own "closes the instant idle hover ends" and FR-6. Held by a test. **If the
+   "Open page" row becomes a real link, this flips back and the hover-the-card state
+   comes with it.**
+2. **`place()` takes the anchor, not the finished placement.** The plan's sketch had the
+   scene hand over `{x, y, side}`, which would have meant the scene knowing the card's
+   measured size. The card measures itself — once per content change, never per frame,
+   which is the rule the plan set — so it is the only thing that can. `cardPlacement()`
+   stays pure and takes that size as an argument, so V-9/V-10 are proven exactly as the
+   plan intended.
+3. **One existing test was edited**, against the plan's "no existing test is edited".
+   `tree.test.ts`'s "rejects a stray field" used `status: "todo"` as its example of an
+   unknown key — the very key this commit reserves. The example moved to one that is
+   still genuinely unknown; the check it makes is unchanged.
+4. **The card closes if its node goes behind the camera.** Not anticipated by the plan.
+   Projecting a point behind the camera mirrors it, so an orbit past 90° with a card open
+   would throw the card to the opposite side of the screen rather than leave it behind
+   its node.
+5. **The card is centred vertically on its node**, not hung below it. The plan specified
+   only the horizontal offset and a vertical clamp; hanging it below would push it off the
+   bottom for any node in the lower half of the frame, where the clamp would then slide it
+   away from its own node every time.
+
 ## Handoff
 
 **For the Stage 4 session. Read this before writing code.**

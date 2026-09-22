@@ -46,6 +46,11 @@ import {
   selectLabelled,
   type GraphLabelsHandle,
 } from "./graph-labels";
+import {
+  NodeHoverCard,
+  type CardAnchor,
+  type NodeHoverCardHandle,
+} from "./node-hover-card";
 import { createTween, prefersReducedMotion, tweenDuration } from "./tween";
 import { UnsupportedNotice } from "./unsupported-notice";
 
@@ -248,6 +253,14 @@ const FLOW_WIDTH_PX = 1.9;
 const EMPHASIS_FRAME_MS = 1000 / 30;
 /** Enough movement between press and release to have been an orbit, not a click. */
 const CLICK_SLOP_PX = 5;
+/**
+ * How long a finger has to stay down on a node before it raises the card instead of
+ * being a tap. A tuning value, sized by eye: long enough that a tap meant to fly the
+ * camera never trips it, short enough that nobody wonders whether it worked. The
+ * gesture is cancelled the moment the finger moves past `CLICK_SLOP_PX`, so this is
+ * only ever measured against a finger holding still (spec §9.2, FR-7).
+ */
+const LONG_PRESS_MS = 450;
 const LABEL_INTERVAL_MS = 1000 / 30;
 
 const WORLD_UP = new Vector3(0, 1, 0);
@@ -284,6 +297,7 @@ const SCENE_TOKENS = [
 export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const labelsRef = useRef<GraphLabelsHandle>(null);
+  const cardRef = useRef<NodeHoverCardHandle>(null);
   const [contextLost, setContextLost] = useState(false);
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
@@ -1255,7 +1269,6 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       lastLabelsAt = now;
 
       const handle = labelsRef.current;
-      if (!handle) return;
 
       const cameraPosition = [
         camera.position.x,
@@ -1267,6 +1280,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       const { clientWidth: width, clientHeight: height } = container!;
       const projected = new Vector3();
 
+      placeCard(height, width, projected);
+
+      if (!handle) return;
       if (!cameraMoving) frozenSelection = null;
       const selected =
         frozenSelection ??
@@ -1313,6 +1329,49 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
           }),
         ),
       );
+    }
+
+    /**
+     * The open card's one node, projected the same way a label's is and handed to
+     * the card as an anchor. At most one node per frame, and only while a card is
+     * open (spec §8): the card layer costs nothing when nothing is open.
+     *
+     * It rides inside `updateLabels()` deliberately - same throttle, same exemption
+     * from it while the camera is moving - so the card tracks its node exactly as
+     * tightly as a label does through a fly-to, an orbit, or the damping tail after
+     * a long-press (FR-9).
+     */
+    function placeCard(height: number, width: number, projected: Vector3) {
+      if (cardNodeIndex === null) return;
+      const node = nodes[cardNodeIndex]!;
+
+      projected.set(...node.position);
+      const distance = projected.distanceTo(camera.position);
+      // The same "radius as drawn" a label offsets by, so the card clears the
+      // circle at any zoom and under the focus bump.
+      const gapPx = labelOffsetPx(
+        node.radius * scales[cardNodeIndex]!,
+        distance,
+        height,
+        CAMERA_FOV,
+      );
+      projected.project(camera);
+
+      // Projecting a point behind the camera mirrors it, which would throw the card
+      // to the opposite side of the screen mid-orbit rather than leave it behind.
+      if (projected.z > 1) {
+        closeCard();
+        return;
+      }
+
+      const anchor: CardAnchor = {
+        nodeX: ((projected.x + 1) / 2) * width,
+        nodeY: ((1 - projected.y) / 2) * height,
+        gapPx,
+        containerWidth: width,
+        containerHeight: height,
+      };
+      cardRef.current?.place(anchor);
     }
 
     function renderFrame(now: number) {
@@ -1605,6 +1664,46 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     const pointer = new Vector2();
     let hoveredIndex: number | null = null;
     let pressedAt: { x: number; y: number } | null = null;
+    /** Which node's card is open, if any. Read by `placeCard` every frame. */
+    let cardNodeIndex: number | null = null;
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    /**
+     * Set only by a long-press that actually fired, and cleared unconditionally on
+     * the next press as well as when it is read. If it ever stuck, every subsequent
+     * click would stop focusing the camera - the graph's primary interaction - and
+     * it would do it silently.
+     */
+    let longPressConsumed = false;
+
+    function openCard(index: number) {
+      const node = nodes[index]!;
+      cardNodeIndex = index;
+      cardRef.current?.show({
+        name: node.name,
+        assignee: node.assignee,
+        status: node.status,
+      });
+      // `updateLabels` early-returns wholesale when throttled. On an idle page the
+      // `invalidate()` below is the only frame that will ever run, so if one
+      // happened to render less than LABEL_INTERVAL_MS ago its pass would return
+      // before placing the card - and the card would sit unplaced for good. Forcing
+      // the throttle open is what makes this a card that always appears rather than
+      // one that appears nineteen times in twenty.
+      lastLabelsAt = 0;
+      invalidate();
+    }
+
+    function closeCard() {
+      if (cardNodeIndex === null) return;
+      cardNodeIndex = null;
+      cardRef.current?.hide();
+    }
+
+    function cancelLongPress() {
+      if (longPressTimer === null) return;
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
 
     function pick(event: PointerEvent): number | null {
       const rect = canvas.getBoundingClientRect();
@@ -1618,22 +1717,64 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     function onPointerMove(event: PointerEvent) {
-      // Hover only changes the cursor: the circle keeps its size, so size stays
-      // the answer to "is this a group" alone.
+      // Hover only changes the cursor and raises the card: the circle keeps its
+      // size, so size stays the answer to "is this a group" alone (FR-10).
       const index = pick(event);
-      if (index === hoveredIndex) return;
-      hoveredIndex = index;
-      canvas.style.cursor = index === null ? "grab" : "pointer";
+      if (index !== hoveredIndex) {
+        hoveredIndex = index;
+        canvas.style.cursor = index === null ? "grab" : "pointer";
+      }
+
+      if (event.pointerType === "touch") {
+        // A finger does not hover. Its card comes from the long-press below, and
+        // the only thing a move does here is decide the press was a drag.
+        if (
+          pressedAt &&
+          Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) >
+            CLICK_SLOP_PX
+        ) {
+          cancelLongPress();
+        }
+        return;
+      }
+
+      // *Idle* hover, the narrower notion this feature turns on: over a node, with
+      // no button down. A button down may already be an orbit drag, and a card
+      // appearing in the middle of one is an interruption, not a hint (FR-11).
+      if (index !== null && pressedAt === null) {
+        if (index !== cardNodeIndex) openCard(index);
+      } else {
+        closeCard();
+      }
     }
 
     function onPointerDown(event: PointerEvent) {
       stopIntro();
       pressedAt = { x: event.clientX, y: event.clientY };
+      longPressConsumed = false;
+
+      if (event.pointerType !== "touch") {
+        // Idle hover has ended, whatever happens next (FR-11).
+        closeCard();
+        return;
+      }
+
+      const index = pick(event);
+      if (index === null) return;
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        if (disposed) return;
+        longPressConsumed = true;
+        openCard(index);
+      }, LONG_PRESS_MS);
     }
 
     function onPointerUp(event: PointerEvent) {
       const pressed = pressedAt;
       pressedAt = null;
+      cancelLongPress();
+      const consumed = longPressConsumed;
+      longPressConsumed = false;
       if (!pressed) return;
       // An orbit drag ends on the canvas too; only a near-stationary release is a
       // click.
@@ -1644,11 +1785,50 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         return;
       }
 
+      // A long-press has already opened the card. It does not *also* fly the
+      // camera - that would be two things happening for one gesture (FR-7).
+      if (consumed) return;
+      // Any tap closes an open card, whether it lands on empty space, another node
+      // or the same one again (FR-8); what it then does is unchanged.
+      if (event.pointerType === "touch") closeCard();
+
       const index = pick(event);
       // Clicking empty space returns to the overview - without it, a viewer who
       // flew into a leaf four levels deep has no way back except reloading (D-7).
       if (index === null) showOverview();
       else focusNode(index);
+    }
+
+    /**
+     * There is no `pointerleave` on this canvas otherwise, so nothing clears the
+     * hover when the pointer exits it - and an open card would stay up over the
+     * page chrome after the pointer had gone (FR-6).
+     *
+     * `pressedAt` is deliberately left alone: a drag that runs off the canvas and
+     * back is still that drag, and clearing it here would change click handling
+     * this feature has no business changing.
+     */
+    function onPointerLeave() {
+      hoveredIndex = null;
+      canvas.style.cursor = "grab";
+      cancelLongPress();
+      closeCard();
+    }
+
+    /** A cancelled touch leaves a timer that would otherwise fire over nothing. */
+    function onPointerCancel() {
+      pressedAt = null;
+      longPressConsumed = false;
+      cancelLongPress();
+    }
+
+    /**
+     * The platform's own long-press callout, competing with ours. `touchAction:
+     * none` is the first line of defence and does not reliably suppress this one on
+     * every mobile browser (spec §9.2).
+     */
+    function onContextMenu(event: Event) {
+      event.preventDefault();
     }
 
     function onKeyDown(event: KeyboardEvent) {
@@ -1677,6 +1857,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointerleave", onPointerLeave);
+    canvas.addEventListener("pointercancel", onPointerCancel);
+    canvas.addEventListener("contextmenu", onContextMenu);
     canvas.addEventListener("webglcontextlost", onContextLost);
     window.addEventListener("resize", onResize);
     window.addEventListener("keydown", onKeyDown);
@@ -1715,12 +1898,16 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       disposed = true;
       if (frame) cancelAnimationFrame(frame);
       if (emphasisTimer !== null) clearTimeout(emphasisTimer);
+      if (longPressTimer !== null) clearTimeout(longPressTimer);
       invalidateRef.current = null;
       applyTokensRef.current = null;
 
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
+      canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("contextmenu", onContextMenu);
       canvas.removeEventListener("webglcontextlost", onContextLost);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
@@ -1772,6 +1959,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       className="graph-space relative flex-1 overflow-hidden"
     >
       <GraphLabels ref={labelsRef} />
+      {/* After the labels, so the card paints above them; both are positioned, so
+          both paint above the imperatively-appended canvas. */}
+      <NodeHoverCard ref={cardRef} />
       {/* The focused node is React state rather than a plain ref because this
           line re-renders with it. The effect reads `focusedIdRef`, so flying to a
           node never rebuilds the scene. */}

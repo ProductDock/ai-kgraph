@@ -138,8 +138,16 @@ changes no file in it.
   and label-fade ranges are multiples of the **current view distance** for the same reason.
 - **Clicking a node frames its parent as well as its children**, so you can always see
   what the thing you clicked hangs off. The root has no parent and keeps its own framing.
-- The seed schema is `.strict()`: unknown keys fail the build. `status`, `assignee` and
-  page links are deliberately not reserved — they arrive when those features do.
+- The seed schema is `.strict()`: unknown keys fail the build. `status` and `assignee`
+  **have now arrived** (`intent/node-hover-card/`) and are the only fields beyond
+  `name`/`children`; page links are still deliberately not reserved. Both are optional in
+  the seed and **required on `GraphNode`** — `flatten()` resolves `"Unassigned"`/`"Todo"`
+  once, for every node with no exception, so the hub and the ring topics carry them too
+  and no consumer repeats the default. `status` is a closed set of three words, so a
+  fourth is a failed build; `assignee` is free text held only to the rule `name` is
+  (non-empty, trimmed, capped), so **a typo'd name ships silently** — a known, accepted
+  trade against maintaining a roster (spec C-2). A name in `seed.ts` is published to
+  every visitor at build time, not fetched per hover (spec C-1, accepted).
 - Node ids are the slugified name path (`pd-ai/ai-agents/workflows/n8n`), so **sibling
   names must be unique**. A duplicate fails the build. The path includes the root, so
   **renaming the root moves every id in the tree** — that is a find-and-replace across
@@ -208,9 +216,18 @@ changes no file in it.
   is stateless, so its on/off churn is smoothed by a `LABEL_FADE_MS` opacity transition
   rather than by hysteresis; a span that changes hands is pinned at zero and faded up, or
   it would cross-fade one node's name into another's.
-- **Single click is spent on camera focus.** The deferred node popup gets **double-click
-  on desktop and long-press on tablet** — decided, not built. Picking already resolves to
-  a node id in one handler in `graph-scene.tsx`, which is where it attaches.
+- **Single click is still spent on camera focus.** The node card that was deferred to
+  double-click is built instead on **idle hover on desktop and long-press on tablet**
+  (`node-hover-card.tsx`), so click-to-focus is untouched. *Idle* hover is the narrow
+  notion: over a node, no button down, not a touch pointer — a card appearing mid-orbit
+  is an interruption, not a hint. A long-press sets `longPressConsumed`, which is what
+  stops the `pointerup` that follows from *also* flying the camera; if that flag ever
+  stuck, every later click would silently stop focusing, so it is cleared on read **and**
+  on the next press. The card layer is entirely `pointer-events: none` — nothing on it is
+  interactive, and a card that took events would block an orbit drag started over it.
+  Opening one forces the label pass open (`lastLabelsAt = 0`) as well as calling
+  `invalidate()`: the throttle would otherwise swallow the one frame the card had to be
+  placed in, and it would sit unplaced for good.
 - **Accessibility of the scene is known, recorded debt**, not an oversight: the canvas is
   unreachable by keyboard and opaque to a screen reader. The page _chrome_ meets WCAG 2.2
   AA. See `intent/graph-accessibility/intent.md`.
