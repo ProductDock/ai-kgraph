@@ -5,13 +5,27 @@
  */
 
 /**
- * THE seed shape - names and children, nothing else (intent Constraints, FR-3).
- * The nesting *is* the parent relationship, so a cross-branch edge, a cycle or a
- * second parent is not expressible.
+ * How far along a topic is. A closed set, not free text: the card reads exactly one
+ * of these three words and never any other (node-hover-card spec FR-4), and the
+ * schema is what makes a fourth one a failed build rather than a surprise on screen.
+ */
+export type NodeStatus = "Todo" | "In Progress" | "Done";
+
+/**
+ * THE seed shape - names, children, and the two hand-authored facts a node carries
+ * about the work (intent Constraints, FR-3; node-hover-card spec §7). The nesting
+ * *is* the parent relationship, so a cross-branch edge, a cycle or a second parent
+ * is not expressible.
+ *
+ * `assignee` and `status` are optional *here* and required on `GraphNode`: the
+ * default is resolved once, in `flatten()`, rather than repeated by every consumer.
  */
 export interface GraphSeed {
   name: string;
   children?: GraphSeed[];
+  /** Who owns this topic. Free text, validated the same light way `name` is. */
+  assignee?: string;
+  status?: NodeStatus;
 }
 
 /** A node after flattening: its id, where it sits, and how much hangs off it. */
@@ -30,6 +44,14 @@ export interface GraphNode {
    * (branch-colour spec §8.2, §8.4).
    */
   hasChildren: boolean;
+  /**
+   * Who owns this topic, or `"Unassigned"`. Always present: `flatten()` resolves the
+   * default for every node it visits, hub and ring topics included, with no exception
+   * (node-hover-card spec §3 Q3, C-5).
+   */
+  assignee: string;
+  /** How far along it is, defaulting to `"Todo"`, on the same terms as `assignee`. */
+  status: NodeStatus;
 }
 
 export interface GraphEdge {

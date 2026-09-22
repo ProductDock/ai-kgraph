@@ -10,6 +10,12 @@ import type { GraphSeed } from "@/lib/graph/types";
  * names them (spec D-10, D-11, C-8). `satisfies` keeps a bad edit a red squiggle
  * before it is a failed build; `flatten` re-validates the invariants types cannot
  * express.
+ *
+ * `assignee` and `status` are optional and authored only where someone has a real
+ * answer (node-hover-card spec §7). Everything without them reads "Unassigned" and
+ * "Todo" - the default, applied uniformly in `flatten()`, not a gap to fill in.
+ * Note that both ship to every visitor at build time, not per hover: a name written
+ * here is published to anyone who can load `/graph` (node-hover-card C-1, accepted).
  */
 export const seed = {
   // The hub reads its own name inside the circle (spec FR-1). Still provisional:
@@ -59,7 +65,10 @@ export const seed = {
       name: "n Node",
       children: [
         {
+          // The intent's own worked example, verbatim.
           name: "RAG",
+          assignee: "Nemanja Vasic",
+          status: "Done",
           children: [
             {
               name: "Vector db",
@@ -72,7 +81,10 @@ export const seed = {
           ],
         },
         {
+          // Status without an assignee: the third status word, and the case where
+          // one field is authored and the other is not, are both on screen.
           name: "Evals",
+          status: "In Progress",
           children: [{ name: "Ragas" }, { name: "DeepEval" }],
         },
         {
