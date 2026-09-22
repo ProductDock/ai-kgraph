@@ -2,7 +2,7 @@
 
 - **Originator:** Nemanja Vasic
 - **Date:** 2026-09-22
-- **Status:** awaiting product owner review
+- **Status:** approved
 
 ## Problem
 
