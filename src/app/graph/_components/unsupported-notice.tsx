@@ -26,7 +26,10 @@ export function UnsupportedNotice({ reason }: { reason: UnsupportedReason }) {
 
   return (
     <div className="flex flex-1 items-center justify-center p-6">
-      <Card className="max-w-md">
+      {/* `w-full` is load-bearing: shadcn's CardHeader is an inline-size
+          container, so it contributes no intrinsic width and the card would
+          otherwise shrink to a sliver inside this flex row. */}
+      <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{title}</CardTitle>
           <CardDescription>{body}</CardDescription>
