@@ -1,5 +1,5 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { nodeAddress } from "@/lib/graph/paths";
 import { seed } from "@/lib/graph/seed";
 import { flatten } from "@/lib/graph/tree";
@@ -8,6 +8,27 @@ import NodePage, {
   generateMetadata,
   generateStaticParams,
 } from "./page";
+
+/*
+ * The page renders against a frozen tree and content directory
+ * (`lib/graph/__fixtures__/`), not the live ones: these assertions need exact names,
+ * owners and bodies, and the live files change whenever someone works on a topic.
+ * `page.live.test.tsx` covers the live tree, for invariants only. So `seed` below is
+ * the fixture.
+ */
+vi.mock("@/lib/graph/seed", async () => {
+  const { fixtureSeed } = await import("@/lib/graph/__fixtures__/seed");
+  return { seed: fixtureSeed };
+});
+vi.mock("@/lib/graph/content", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/graph/content")>();
+  const { FIXTURE_CONTENT_DIR } = await import("@/lib/graph/__fixtures__/seed");
+  return {
+    ...actual,
+    loadNodeContent: (tree: Parameters<typeof actual.loadNodeContent>[0]) =>
+      actual.loadNodeContent(tree, FIXTURE_CONTENT_DIR),
+  };
+});
 
 // No vitest globals here, so testing-library cannot register its own cleanup.
 afterEach(cleanup);

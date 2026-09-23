@@ -1,9 +1,15 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   loadNodeContent,
   resolveNodeContent,
   type ContentFile,
 } from "@/lib/graph/content";
+import {
+  FIXTURE_CONTENT_DIR,
+  fixtureSeed,
+} from "@/lib/graph/__fixtures__/seed";
 import { seed } from "@/lib/graph/seed";
 import { flatten } from "@/lib/graph/tree";
 import type { GraphSeed } from "@/lib/graph/types";
@@ -187,9 +193,9 @@ describe("resolveNodeContent - defaults (V-12, V-7)", () => {
   });
 });
 
-describe("loadNodeContent - the real content/ tree", () => {
-  it("carries RAG's and Evals' facts, and defaults everything else", () => {
-    const content = loadNodeContent(seed);
+describe("loadNodeContent", () => {
+  it("reads files from disk and defaults every node without one", () => {
+    const content = loadNodeContent(fixtureSeed, FIXTURE_CONTENT_DIR);
 
     expect(content.get("pd-ai/n-node/rag")).toMatchObject({
       assignee: "Nemanja Vasic",
@@ -206,7 +212,7 @@ describe("loadNodeContent - the real content/ tree", () => {
     });
 
     const authored = new Set(["pd-ai/n-node/rag", "pd-ai/n-node/evals"]);
-    for (const node of flatten(seed).nodes) {
+    for (const node of flatten(fixtureSeed).nodes) {
       if (authored.has(node.id)) continue;
       expect(content.get(node.id)).toMatchObject({
         assignee: "Unassigned",
@@ -217,7 +223,28 @@ describe("loadNodeContent - the real content/ tree", () => {
   });
 
   it("treats a missing directory as no files", () => {
-    const content = loadNodeContent(seed, "/nonexistent/content");
+    const content = loadNodeContent(fixtureSeed, "/nonexistent/content");
     expect(content.get("pd-ai/n-node/rag")!.hasFile).toBe(false);
+  });
+});
+
+/**
+ * The live `content/` and `seed.ts`, checked only for what must hold whatever
+ * anyone has written: it resolves (the same check `next build` runs), every node
+ * has an entry, and every file on disk was matched to one. No names, no values -
+ * so writing a page or adding a topic never means editing this test.
+ */
+describe("the live content/ tree", () => {
+  it("resolves against the live seed, one file per matched node", () => {
+    const content = loadNodeContent(seed);
+    const { nodes } = flatten(seed);
+
+    expect(content.size).toBe(nodes.length);
+    const onDisk = readdirSync(join(process.cwd(), "content"), {
+      recursive: true,
+    }).filter((path) => String(path).endsWith(".md"));
+    expect([...content.values()].filter((entry) => entry.hasFile)).toHaveLength(
+      onDisk.length,
+    );
   });
 });

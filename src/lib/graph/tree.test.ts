@@ -1,23 +1,49 @@
 import { describe, expect, it } from "vitest";
+import { MAX_NODES } from "@/lib/graph/schema";
 import { seed } from "@/lib/graph/seed";
 import { flatten } from "@/lib/graph/tree";
 import type { GraphSeed } from "@/lib/graph/types";
 
+/**
+ * A fixed tree for the assertions that need exact names and counts. The live seed
+ * changes every time someone adds a topic, so tests against it check only what must
+ * hold for *any* seed - pinning today's 36 nodes made every content PR a test edit.
+ */
+const tree: GraphSeed = {
+  name: "AI",
+  children: [
+    {
+      name: "n Node",
+      children: [
+        {
+          name: "RAG",
+          children: [{ name: "Vector db", children: [{ name: "pgvector" }] }],
+        },
+        { name: "Evals" },
+      ],
+    },
+    { name: "Protocols", children: [{ name: "MCP" }, { name: "A2A" }] },
+  ],
+};
+
 describe("flatten", () => {
-  it("turns the day-one seed into the tree the intent describes", () => {
+  it("turns the live seed into one tree within the node budget", () => {
     const { nodes, edges } = flatten(seed);
 
-    expect(nodes).toHaveLength(36);
+    expect(nodes.length).toBeGreaterThan(1);
+    expect(nodes.length).toBeLessThanOrEqual(MAX_NODES);
     // A tree: every node but the root has exactly one parent edge.
     expect(edges).toHaveLength(nodes.length - 1);
-    expect(nodes[0]).toMatchObject({ id: "pd-ai", depth: 0, parentId: null });
+    expect(nodes[0]).toMatchObject({ depth: 0, parentId: null });
     expect(nodes.filter((node) => node.parentId === null)).toHaveLength(1);
   });
 
   it("derives ids from the slugified name path", () => {
-    const ids = flatten(seed).nodes.map((node) => node.id);
+    expect(flatten(tree).nodes.map((node) => node.id)).toContain(
+      "ai/n-node/rag/vector-db/pgvector",
+    );
 
-    expect(ids).toContain("pd-ai/n-node/rag/vector-db/pgvector");
+    const ids = flatten(seed).nodes.map((node) => node.id);
     expect(ids.every((id) => /^[a-z0-9-]+(\/[a-z0-9-]+)*$/.test(id))).toBe(
       true,
     );
@@ -25,24 +51,26 @@ describe("flatten", () => {
   });
 
   it("counts leaves per subtree", () => {
-    const byId = new Map(flatten(seed).nodes.map((node) => [node.id, node]));
+    const byId = new Map(flatten(tree).nodes.map((node) => [node.id, node]));
 
-    expect(byId.get("pd-ai/protocols")?.leafCount).toBe(3);
-    expect(byId.get("pd-ai/protocols/a2a")?.leafCount).toBe(1);
-    expect(byId.get("pd-ai")?.leafCount).toBe(
-      [...byId.values()].filter((node) => node.leafCount === 1).length,
+    expect(byId.get("ai/protocols")?.leafCount).toBe(2);
+    expect(byId.get("ai/protocols/a2a")?.leafCount).toBe(1);
+
+    const live = flatten(seed).nodes;
+    expect(live[0]!.leafCount).toBe(
+      live.filter((node) => !node.hasChildren).length,
     );
   });
 
   it("records whether anything hangs off each node", () => {
-    const byId = new Map(flatten(seed).nodes.map((node) => [node.id, node]));
+    const byId = new Map(flatten(tree).nodes.map((node) => [node.id, node]));
 
-    expect(byId.get("pd-ai/protocols")?.hasChildren).toBe(true);
-    expect(byId.get("pd-ai/protocols/a2a")?.hasChildren).toBe(false);
+    expect(byId.get("ai/protocols")?.hasChildren).toBe(true);
+    expect(byId.get("ai/protocols/a2a")?.hasChildren).toBe(false);
     // Not derivable from leafCount: a node with one leaf child and a childless
     // leaf both count 1, which is why the flag exists at all.
-    expect(byId.get("pd-ai/n-node/rag")?.leafCount).toBe(3);
-    expect(byId.get("pd-ai/n-node/rag")?.hasChildren).toBe(true);
+    expect(byId.get("ai/n-node/rag")?.leafCount).toBe(1);
+    expect(byId.get("ai/n-node/rag")?.hasChildren).toBe(true);
   });
 
   it("emits every node before its own children", () => {

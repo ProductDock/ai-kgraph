@@ -1,9 +1,10 @@
 import type { GraphSeed } from "@/lib/graph/types";
 
 /**
- * THE CONTENT. Transcribed exactly from the intent's Constraints tree - 36 nodes,
- * five levels. This is the only file a content change touches; adding a topic is a
- * file edit and a PR (spec D-3, FR-2).
+ * THE TREE. Started as a transcription of the intent's Constraints tree - 36 nodes,
+ * five levels - and grows as people add topics: adding one is an edit here and a PR
+ * (spec D-3, FR-2). The `graph-topic` skill (`.claude/skills/graph-topic/`) walks
+ * anyone through it, and through writing the topic's page in `content/`.
  *
  * Two labels read as placeholders and four read as notes-to-self. They are recorded
  * as they were written rather than invented, and ship verbatim until the originator

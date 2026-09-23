@@ -10,6 +10,7 @@ import {
 } from "@/lib/graph/colour";
 import { GROUP_RADIUS, LEAF_RADIUS, radiusForNode } from "@/lib/graph/palette";
 import { buildScene } from "@/lib/graph/scene";
+import { fixtureSeed } from "@/lib/graph/__fixtures__/seed";
 import { seed } from "@/lib/graph/seed";
 import { flatten } from "@/lib/graph/tree";
 import type { GraphNode, GraphSeed } from "@/lib/graph/types";
@@ -17,7 +18,14 @@ import type { GraphNode, GraphSeed } from "@/lib/graph/types";
 const { nodes } = flatten(seed);
 const colours = assignColours(nodes);
 const byId = new Map(nodes.map((node) => [node.id, node]));
-const named = (name: string) => nodes.find((node) => node.name === name)!;
+/**
+ * Cases that need a topic *by name* run on the frozen fixture tree, not the live
+ * seed, so renaming a topic in seed.ts never breaks a colour test. The live seed is
+ * still checked below, for the rules that hold for any tree.
+ */
+const fixture = flatten(fixtureSeed).nodes;
+const fixtureColours = assignColours(fixture);
+const named = (name: string) => fixture.find((node) => node.name === name)!;
 
 /** 148 nodes - the same envelope layout.test.ts uses, not the day-one 36. */
 const wide: GraphSeed = {
@@ -112,17 +120,17 @@ describe("assignColours", () => {
     const vectorDb = named("Vector db");
     const topic = named("n Node");
 
-    expect(colours.get(vectorDb.id)!.token).toBe(colours.get(rag.id)!.token);
-    expect(colours.get(rag.id)!.token).toBe(colours.get(topic.id)!.token);
-    expect(colours.get(vectorDb.id)!.tint).toBeGreaterThan(
-      colours.get(rag.id)!.tint,
+    expect(fixtureColours.get(vectorDb.id)!.token).toBe(fixtureColours.get(rag.id)!.token);
+    expect(fixtureColours.get(rag.id)!.token).toBe(fixtureColours.get(topic.id)!.token);
+    expect(fixtureColours.get(vectorDb.id)!.tint).toBeGreaterThan(
+      fixtureColours.get(rag.id)!.tint,
     );
     for (const leaf of ["pgvector", "Qdrant", "S3 vector"]) {
-      expect(colours.get(named(leaf).id)!.token).toBe(
-        colours.get(vectorDb.id)!.token,
+      expect(fixtureColours.get(named(leaf).id)!.token).toBe(
+        fixtureColours.get(vectorDb.id)!.token,
       );
-      expect(colours.get(named(leaf).id)!.tint).toBeCloseTo(
-        colours.get(vectorDb.id)!.tint + TINT_STEP,
+      expect(fixtureColours.get(named(leaf).id)!.tint).toBeCloseTo(
+        fixtureColours.get(vectorDb.id)!.tint + TINT_STEP,
       );
     }
   });
@@ -150,8 +158,11 @@ describe("assignColours", () => {
     grown.children![0]!.children!.push({ name: "Something new" });
 
     const after = assignColours(flatten(grown).nodes);
+    // The branch that grew is whichever topic comes first, not a name - so
+    // renaming it in seed.ts does not break this test.
+    const grownId = flatten(grown).nodes.find((node) => node.depth === 1)!.id;
     const untouched = nodes.filter(
-      (node) => !node.id.startsWith("pd-ai/ai-agents"),
+      (node) => node.id !== grownId && !node.id.startsWith(`${grownId}/`),
     );
 
     expect(untouched.length).toBeGreaterThan(0);
@@ -180,9 +191,9 @@ describe("radiusForNode", () => {
   // V-6 - and depth no longer changes either one.
   it("draws a deep group and a shallow one at the same size", () => {
     expect(radiusForNode(named("Vector db"))).toBe(
-      radiusForNode(named("AI Agents")),
+      radiusForNode(named("n Node")),
     );
-    expect(named("Vector db").depth).not.toBe(named("AI Agents").depth);
+    expect(named("Vector db").depth).not.toBe(named("n Node").depth);
   });
 
   // V-7
