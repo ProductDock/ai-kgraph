@@ -1,7 +1,7 @@
 import { createRef } from "react";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   CARD_MAX_PX,
   cardPlacement,
@@ -13,6 +13,12 @@ import {
 // This repo does not enable vitest globals, so testing-library's auto-cleanup
 // never runs - without this every `getBy*` after the first test sees two trees.
 afterEach(cleanup);
+
+// Not `getByRole`: the card is aria-hidden and unplaced (visibility: hidden) in
+// jsdom, so the link has no accessible name to query by - which is the point.
+function openPageLink(): HTMLElement {
+  return screen.getByText("Open page").closest("a")!;
+}
 
 const CONTAINER = { containerWidth: 1000, containerHeight: 600 };
 
@@ -95,6 +101,7 @@ describe("NodeHoverCard", () => {
         name: "RAG",
         assignee: "Nemanja Vasic",
         status: "Done",
+        href: "/graph/n-node/rag",
       }),
     );
 
@@ -108,6 +115,26 @@ describe("NodeHoverCard", () => {
       "StatusDone",
       "Open page",
     ]);
+    expect(openPageLink()).toHaveAttribute("href", "/graph/n-node/rag");
+  });
+
+  // node-content-pages FR-8
+  it("shows the hub's name and nothing else", () => {
+    const ref = mount();
+    act(() =>
+      ref.current!.show({
+        name: "PD AI",
+        assignee: "Unassigned",
+        status: "Todo",
+        href: null,
+      }),
+    );
+
+    const card = screen.getByTestId("node-hover-card");
+    expect(
+      [...card.querySelectorAll("p")].map((row) => row.textContent),
+    ).toEqual(["PD AI"]);
+    expect(card.querySelector("a")).toBeNull();
   });
 
   it("shows the defaults a blank node flattens to", () => {
@@ -117,6 +144,7 @@ describe("NodeHoverCard", () => {
         name: "Protocols",
         assignee: "Unassigned",
         status: "Todo",
+        href: "/graph/protocols",
       }),
     );
 
@@ -126,9 +154,21 @@ describe("NodeHoverCard", () => {
 
   it("swaps content in place rather than opening a second card", () => {
     const ref = mount();
-    act(() => ref.current!.show({ name: "RAG", assignee: "A", status: "Done" }));
     act(() =>
-      ref.current!.show({ name: "Evals", assignee: "B", status: "Todo" }),
+      ref.current!.show({
+        name: "RAG",
+        assignee: "A",
+        status: "Done",
+        href: "/graph/x",
+      }),
+    );
+    act(() =>
+      ref.current!.show({
+        name: "Evals",
+        assignee: "B",
+        status: "Todo",
+        href: "/graph/x",
+      }),
     );
 
     expect(screen.getAllByTestId("node-hover-card")).toHaveLength(1);
@@ -138,7 +178,14 @@ describe("NodeHoverCard", () => {
 
   it("goes away when hidden", () => {
     const ref = mount();
-    act(() => ref.current!.show({ name: "RAG", assignee: "A", status: "Done" }));
+    act(() =>
+      ref.current!.show({
+        name: "RAG",
+        assignee: "A",
+        status: "Done",
+        href: "/graph/x",
+      }),
+    );
     act(() => ref.current!.hide());
 
     expect(screen.queryByTestId("node-hover-card")).toBeNull();
@@ -152,6 +199,7 @@ describe("NodeHoverCard", () => {
         name: "A topic with a name far longer than the card is ever meant to be",
         assignee: "Someone With A Very Long Name Indeed Who Owns This Topic",
         status: "In Progress",
+        href: "/graph/x",
       }),
     );
 
@@ -164,28 +212,90 @@ describe("NodeHoverCard", () => {
 
   it("is hidden from assistive technology, like the label layer", () => {
     const ref = mount();
-    act(() => ref.current!.show({ name: "RAG", assignee: "A", status: "Done" }));
+    act(() =>
+      ref.current!.show({
+        name: "RAG",
+        assignee: "A",
+        status: "Done",
+        href: "/graph/x",
+      }),
+    );
 
     expect(
       screen.getByTestId("node-hover-card").closest("[aria-hidden=true]"),
     ).not.toBeNull();
   });
 
-  // The whole layer is inert: nothing on it can swallow an orbit drag (R-3).
-  it("never accepts pointer events", () => {
+  // node-content-pages §9.5, FR-4: the layer stays see-through, so an orbit drag
+  // started over the card's name or rows still turns the scene. The link is the one
+  // exception, and it is kept out of the tab order inside the aria-hidden layer.
+  it("takes pointer events on the Open page link and nowhere else", () => {
     const ref = mount();
-    act(() => ref.current!.show({ name: "RAG", assignee: "A", status: "Done" }));
+    act(() =>
+      ref.current!.show({
+        name: "RAG",
+        assignee: "A",
+        status: "Done",
+        href: "/graph/x",
+      }),
+    );
 
-    expect(
-      screen
-        .getByTestId("node-hover-card")
-        .closest(".pointer-events-none"),
-    ).not.toBeNull();
+    const card = screen.getByTestId("node-hover-card");
+    expect(card.closest(".pointer-events-none")).not.toBeNull();
+    const interactive = [...card.querySelectorAll(".pointer-events-auto")];
+    expect(interactive).toHaveLength(1);
+    expect(interactive[0]!.tagName).toBe("A");
+    expect(interactive[0]).toHaveTextContent("Open page");
+    expect(interactive[0]).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("tells the scene when the pointer is on the link, but not for touch", () => {
+    const enter = vi.fn();
+    const leave = vi.fn();
+    const click = vi.fn();
+    const ref = createRef<NodeHoverCardHandle>();
+    render(
+      <NodeHoverCard
+        ref={ref}
+        onLinkPointerEnter={enter}
+        onLinkPointerLeave={leave}
+        onLinkClick={click}
+      />,
+    );
+    act(() =>
+      ref.current!.show({
+        name: "RAG",
+        assignee: "A",
+        status: "Done",
+        href: "/graph/x",
+      }),
+    );
+    const link = openPageLink();
+
+    fireEvent.pointerEnter(link, { pointerType: "mouse" });
+    fireEvent.pointerLeave(link, { pointerType: "mouse" });
+    expect(enter).toHaveBeenCalledTimes(1);
+    expect(leave).toHaveBeenCalledTimes(1);
+
+    fireEvent.pointerEnter(link, { pointerType: "touch" });
+    fireEvent.pointerLeave(link, { pointerType: "touch" });
+    expect(enter).toHaveBeenCalledTimes(1);
+    expect(leave).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(link);
+    expect(click).toHaveBeenCalledTimes(1);
   });
 
   it("stays hidden until it has been placed, so it never flashes at the origin", () => {
     const ref = mount();
-    act(() => ref.current!.show({ name: "RAG", assignee: "A", status: "Done" }));
+    act(() =>
+      ref.current!.show({
+        name: "RAG",
+        assignee: "A",
+        status: "Done",
+        href: "/graph/x",
+      }),
+    );
 
     // jsdom reports every element as zero-sized, which is exactly the
     // "not measured yet" state the guard exists for.
@@ -231,6 +341,7 @@ describe("NodeHoverCard, once it has a size", () => {
     name: "RAG",
     assignee: "Nemanja Vasic",
     status: "Done",
+    href: "/graph/n-node/rag",
   } as const;
 
   it("places the card when the frame lands after the mount", () => {
@@ -276,6 +387,31 @@ describe("NodeHoverCard, once it has a size", () => {
     const card = screen.getByTestId("node-hover-card");
     expect(card.style.visibility).toBe("visible");
     expect(screen.getByText("Evals")).toBeTruthy();
+  });
+
+  // The card is see-through to pointer events, so this is how the scene knows the
+  // pointer has moved onto it rather than off into empty space.
+  it("reports whether a point is over the card as placed", () => {
+    const ref = mount();
+    act(() => ref.current!.show(content));
+    act(() => ref.current!.place(anchor()));
+
+    // Placed at (512, 254), 180 x 92.
+    expect(ref.current!.contains(512, 254)).toBe(true);
+    expect(ref.current!.contains(600, 300)).toBe(true);
+    expect(ref.current!.contains(692, 346)).toBe(true);
+    expect(ref.current!.contains(505, 300)).toBe(false);
+    expect(ref.current!.contains(600, 350)).toBe(false);
+  });
+
+  it("contains nothing once hidden, or before it has been placed", () => {
+    const ref = mount();
+    act(() => ref.current!.show(content));
+    expect(ref.current!.contains(600, 300)).toBe(false);
+
+    act(() => ref.current!.place(anchor()));
+    act(() => ref.current!.hide());
+    expect(ref.current!.contains(600, 300)).toBe(false);
   });
 
   it("re-places itself when the content changes under an open card", () => {

@@ -12,20 +12,14 @@
 export type NodeStatus = "Todo" | "In Progress" | "Done";
 
 /**
- * THE seed shape - names, children, and the two hand-authored facts a node carries
- * about the work (intent Constraints, FR-3; node-hover-card spec §7). The nesting
- * *is* the parent relationship, so a cross-branch edge, a cycle or a second parent
- * is not expressible.
- *
- * `assignee` and `status` are optional *here* and required on `GraphNode`: the
- * default is resolved once, in `flatten()`, rather than repeated by every consumer.
+ * THE seed shape - names and nesting, nothing else. The nesting *is* the parent
+ * relationship, so a cross-branch edge, a cycle or a second parent is not
+ * expressible. What a node says about the work - owner, status, prose - lives in
+ * its content file under `content/`, not here (node-content-pages spec §9.2).
  */
 export interface GraphSeed {
   name: string;
   children?: GraphSeed[];
-  /** Who owns this topic. Free text, validated the same light way `name` is. */
-  assignee?: string;
-  status?: NodeStatus;
 }
 
 /** A node after flattening: its id, where it sits, and how much hangs off it. */
@@ -44,14 +38,6 @@ export interface GraphNode {
    * (branch-colour spec §8.2, §8.4).
    */
   hasChildren: boolean;
-  /**
-   * Who owns this topic, or `"Unassigned"`. Always present: `flatten()` resolves the
-   * default for every node it visits, hub and ring topics included, with no exception
-   * (node-hover-card spec §3 Q3, C-5).
-   */
-  assignee: string;
-  /** How far along it is, defaulting to `"Todo"`, on the same terms as `assignee`. */
-  status: NodeStatus;
 }
 
 export interface GraphEdge {
@@ -61,8 +47,34 @@ export interface GraphEdge {
 
 export type Vec3 = readonly [number, number, number];
 
-/** A node with its computed place in the scene. */
-export interface GraphSceneNode extends GraphNode {
+/**
+ * What a node's content file says, with every default already applied - one of
+ * these exists for every node, file or no file (node-content-pages spec §9.1).
+ * Resolved once, in `content.ts`, so no consumer ever has to know what an
+ * unauthored node reads as.
+ */
+export interface NodeContent {
+  /** The page heading. Defaults to the node's own name; never the tab title. */
+  title: string;
+  /** Lower-cased and de-duplicated. Inert labels, never links. */
+  tags: string[];
+  /** Who owns this topic, or `"Unassigned"`. */
+  assignee: string;
+  /** How far along it is, defaulting to `"Todo"`. */
+  status: NodeStatus;
+  /** Markdown with the frontmatter stripped and trimmed; `""` reads "No content yet". */
+  body: string;
+  /** Whether a file backs this node at all. The page never keys on it (spec D-4). */
+  hasFile: boolean;
+}
+
+/**
+ * A node with its computed place in the scene, plus the two content fields the card
+ * shows. `buildScene()` merges those in at the same point `flatten()` used to set
+ * them, so the card and the scene read the same two fields they always did.
+ */
+export interface GraphSceneNode
+  extends GraphNode, Pick<NodeContent, "assignee" | "status"> {
   position: Vec3;
   radius: number;
   /**

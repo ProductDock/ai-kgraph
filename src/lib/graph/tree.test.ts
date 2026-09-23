@@ -1,23 +1,49 @@
 import { describe, expect, it } from "vitest";
+import { MAX_NODES } from "@/lib/graph/schema";
 import { seed } from "@/lib/graph/seed";
 import { flatten } from "@/lib/graph/tree";
 import type { GraphSeed } from "@/lib/graph/types";
 
+/**
+ * A fixed tree for the assertions that need exact names and counts. The live seed
+ * changes every time someone adds a topic, so tests against it check only what must
+ * hold for *any* seed - pinning today's 36 nodes made every content PR a test edit.
+ */
+const tree: GraphSeed = {
+  name: "AI",
+  children: [
+    {
+      name: "n Node",
+      children: [
+        {
+          name: "RAG",
+          children: [{ name: "Vector db", children: [{ name: "pgvector" }] }],
+        },
+        { name: "Evals" },
+      ],
+    },
+    { name: "Protocols", children: [{ name: "MCP" }, { name: "A2A" }] },
+  ],
+};
+
 describe("flatten", () => {
-  it("turns the day-one seed into the tree the intent describes", () => {
+  it("turns the live seed into one tree within the node budget", () => {
     const { nodes, edges } = flatten(seed);
 
-    expect(nodes).toHaveLength(36);
+    expect(nodes.length).toBeGreaterThan(1);
+    expect(nodes.length).toBeLessThanOrEqual(MAX_NODES);
     // A tree: every node but the root has exactly one parent edge.
     expect(edges).toHaveLength(nodes.length - 1);
-    expect(nodes[0]).toMatchObject({ id: "pd-ai", depth: 0, parentId: null });
+    expect(nodes[0]).toMatchObject({ depth: 0, parentId: null });
     expect(nodes.filter((node) => node.parentId === null)).toHaveLength(1);
   });
 
   it("derives ids from the slugified name path", () => {
-    const ids = flatten(seed).nodes.map((node) => node.id);
+    expect(flatten(tree).nodes.map((node) => node.id)).toContain(
+      "ai/n-node/rag/vector-db/pgvector",
+    );
 
-    expect(ids).toContain("pd-ai/n-node/rag/vector-db/pgvector");
+    const ids = flatten(seed).nodes.map((node) => node.id);
     expect(ids.every((id) => /^[a-z0-9-]+(\/[a-z0-9-]+)*$/.test(id))).toBe(
       true,
     );
@@ -25,24 +51,26 @@ describe("flatten", () => {
   });
 
   it("counts leaves per subtree", () => {
-    const byId = new Map(flatten(seed).nodes.map((node) => [node.id, node]));
+    const byId = new Map(flatten(tree).nodes.map((node) => [node.id, node]));
 
-    expect(byId.get("pd-ai/protocols")?.leafCount).toBe(3);
-    expect(byId.get("pd-ai/protocols/a2a")?.leafCount).toBe(1);
-    expect(byId.get("pd-ai")?.leafCount).toBe(
-      [...byId.values()].filter((node) => node.leafCount === 1).length,
+    expect(byId.get("ai/protocols")?.leafCount).toBe(2);
+    expect(byId.get("ai/protocols/a2a")?.leafCount).toBe(1);
+
+    const live = flatten(seed).nodes;
+    expect(live[0]!.leafCount).toBe(
+      live.filter((node) => !node.hasChildren).length,
     );
   });
 
   it("records whether anything hangs off each node", () => {
-    const byId = new Map(flatten(seed).nodes.map((node) => [node.id, node]));
+    const byId = new Map(flatten(tree).nodes.map((node) => [node.id, node]));
 
-    expect(byId.get("pd-ai/protocols")?.hasChildren).toBe(true);
-    expect(byId.get("pd-ai/protocols/a2a")?.hasChildren).toBe(false);
+    expect(byId.get("ai/protocols")?.hasChildren).toBe(true);
+    expect(byId.get("ai/protocols/a2a")?.hasChildren).toBe(false);
     // Not derivable from leafCount: a node with one leaf child and a childless
     // leaf both count 1, which is why the flag exists at all.
-    expect(byId.get("pd-ai/n-node/rag")?.leafCount).toBe(3);
-    expect(byId.get("pd-ai/n-node/rag")?.hasChildren).toBe(true);
+    expect(byId.get("ai/n-node/rag")?.leafCount).toBe(1);
+    expect(byId.get("ai/n-node/rag")?.hasChildren).toBe(true);
   });
 
   it("emits every node before its own children", () => {
@@ -68,71 +96,17 @@ describe("flatten", () => {
     expect(() => flatten(strayField)).toThrow(/unrecognized|Unrecognized/);
   });
 
-  // node-hover-card V-11
-  it("defaults a node with neither field to Unassigned/Todo", () => {
-    const byId = new Map(flatten(seed).nodes.map((node) => [node.id, node]));
-
-    // No exception for the hub or a ring topic: they are categories rather than
-    // pieces of work and read the default like anything else (spec §3 Q3, C-5).
-    expect(byId.get("pd-ai")).toMatchObject({
-      assignee: "Unassigned",
-      status: "Todo",
-    });
-    expect(byId.get("pd-ai/protocols")).toMatchObject({
-      assignee: "Unassigned",
-      status: "Todo",
-    });
-    expect(
-      flatten(seed).nodes.every(
-        (node) => node.assignee.length > 0 && node.status.length > 0,
-      ),
-    ).toBe(true);
-  });
-
-  // node-hover-card V-11
-  it("keeps what a node authored for itself", () => {
-    const authored: GraphSeed = {
+  // node-content-pages §7. Owner and status moved to `content/` frontmatter, so on a
+  // seed node they are now just unknown keys - the build fails naming the node, which
+  // is the signal an in-flight PR that still edits them gets.
+  it("rejects assignee and status on a seed node, naming the node", () => {
+    const stale = {
       name: "AI",
-      children: [
-        { name: "RAG", assignee: "Nemanja Vasic", status: "Done" },
-        { name: "Evals", status: "In Progress" },
-      ],
-    };
-    const byId = new Map(flatten(authored).nodes.map((n) => [n.id, n]));
-
-    expect(byId.get("ai/rag")).toMatchObject({
-      assignee: "Nemanja Vasic",
-      status: "Done",
-    });
-    // Status without an assignee keeps the status and still defaults the name.
-    expect(byId.get("ai/evals")).toMatchObject({
-      assignee: "Unassigned",
-      status: "In Progress",
-    });
-  });
-
-  // node-hover-card V-12
-  it("still rejects an unknown key, and a bad value, alongside the new fields", () => {
-    const misspelled = {
-      name: "AI",
-      children: [{ name: "RAG", assignees: "Nemanja Vasic", status: "Done" }],
+      children: [{ name: "RAG", assignee: "Nemanja Vasic", status: "Done" }],
     } as unknown as GraphSeed;
-    expect(() => flatten(misspelled)).toThrow(/RAG/);
 
-    // `status` is a closed set, so a fourth word is a failed build naming the
-    // node rather than a word the card would have to render (FR-4).
-    const badStatus = {
-      name: "AI",
-      children: [{ name: "RAG", status: "Blocked" }],
-    } as unknown as GraphSeed;
-    expect(() => flatten(badStatus)).toThrow(/RAG/);
-
-    // And an assignee is held to the same rule `name` is.
-    const untrimmed = {
-      name: "AI",
-      children: [{ name: "RAG", assignee: " Nemanja " }],
-    } as unknown as GraphSeed;
-    expect(() => flatten(untrimmed)).toThrow(/whitespace/);
+    expect(() => flatten(stale)).toThrow(/RAG/);
+    expect(() => flatten(stale)).toThrow(/unrecognized|Unrecognized/);
   });
 
   // V-5

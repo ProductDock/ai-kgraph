@@ -5,9 +5,13 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type PointerEvent,
   type RefObject,
 } from "react";
+import Link from "next/link";
+import { PROSE_LINK } from "@/components/common/link-styles";
 import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { NodeStatus } from "@/lib/graph/types";
 
 /**
@@ -21,11 +25,19 @@ import type { NodeStatus } from "@/lib/graph/types";
  */
 export const CARD_MAX_PX = 240;
 
-/** What the card shows. Four rows, in this order, always (FR-2). */
+/**
+ * What the card shows: four rows, in this order (FR-2) - or, for the hub, the name
+ * alone (node-content-pages FR-8).
+ */
 export interface NodeCardContent {
   name: string;
   assignee: string;
   status: NodeStatus;
+  /**
+   * The node's page, which "Open page" links to. `null` only for the hub: it has no
+   * page, `/graph` is its page, so its card never had the other three rows at all.
+   */
+  href: string | null;
 }
 
 /**
@@ -91,6 +103,13 @@ export interface NodeHoverCardHandle {
   /** Move it to its node. Cheap: no React state, no DOM measurement. */
   place(anchor: CardAnchor): void;
   hide(): void;
+  /**
+   * Whether a point, in container pixels, is over the card as last placed. The card
+   * is see-through to pointer events, so the canvas cannot tell on its own that the
+   * pointer has moved onto it - this is how it knows not to close the card. Reads
+   * the stored placement, never the DOM.
+   */
+  contains(x: number, y: number): boolean;
 }
 
 /**
@@ -104,25 +123,46 @@ export interface NodeHoverCardHandle {
  * to the element, the way `GraphLabels.apply()` does, so the per-frame path touches
  * no React state at all.
  *
- * The whole layer is `pointer-events: none`, including the card. Nothing on it is
- * interactive in this release - "Open page" is static text by design (§9.4) - and a
- * card that accepted pointer events would block an orbit drag started over it and
- * would stop the canvas seeing the pointer leave its node. See the deviation note in
- * `intent/node-hover-card/plan.md`.
+ * The layer and the card are `pointer-events: none`, and exactly one element on it
+ * is not: the "Open page" link (node-content-pages spec §9.5). Everything else stays
+ * see-through, so an orbit drag started over the card's name or rows still turns the
+ * scene (FR-4); a drag started on the link itself is the one exception the intent
+ * makes. Entering the link fires the canvas's `pointerleave`, so the scene needs to
+ * be told the pointer is on the link rather than gone - that is what
+ * `onLinkPointerEnter`/`onLinkPointerLeave` are for, and they ignore touch, where a
+ * tap has no hover to hold open.
  *
  * `aria-hidden`, the same posture the label layer has: the scene is unreachable by
  * keyboard and opaque to a screen reader, which is known, separately tracked debt
- * (`intent/graph-accessibility/`), widened here knowingly (spec C-4).
+ * (`intent/graph-accessibility/`), widened here knowingly (spec C-4; content-pages
+ * C-2). The link is `tabIndex={-1}` for the same reason: a focusable element inside
+ * an `aria-hidden` subtree is a tab stop a screen reader never announces.
  */
 export function NodeHoverCard({
   ref,
+  onLinkPointerEnter,
+  onLinkPointerLeave,
+  onLinkClick,
 }: {
   ref: RefObject<NodeHoverCardHandle | null>;
+  /** The pointer is on the link: hold the card open. Not called for touch. */
+  onLinkPointerEnter?: () => void;
+  /** The pointer left the link: let the card close. Not called for touch. */
+  onLinkPointerLeave?: () => void;
+  /** Runs before navigation, so the scene can save the view to come back to. */
+  onLinkClick?: () => void;
 }) {
   const [content, setContent] = useState<NodeCardContent | null>(null);
   const element = useRef<HTMLDivElement>(null);
   const size = useRef({ width: 0, height: 0 });
   const anchor = useRef<CardAnchor | null>(null);
+  /** Where the card is drawn, in container pixels, or `null` while not visible. */
+  const placed = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
   // Measured once per content change, never per frame: a layout read in the render
   // loop is the one thing this scene's update pass is careful not to do (§9.3).
@@ -160,9 +200,11 @@ export function NodeHoverCard({
     // hidden until then, so it never flashes in the wrong place.
     if (width === 0 || height === 0) {
       node.style.visibility = "hidden";
+      placed.current = null;
       return;
     }
     const placement = cardPlacement(next, width, height);
+    placed.current = { x: placement.x, y: placement.y, width, height };
     node.style.transform = `translate3d(${placement.x}px, ${placement.y}px, 0)`;
     node.style.visibility = "visible";
   }
@@ -173,7 +215,8 @@ export function NodeHoverCard({
         current &&
         current.name === next.name &&
         current.assignee === next.assignee &&
-        current.status === next.status
+        current.status === next.status &&
+        current.href === next.href
           ? current
           : next,
       );
@@ -181,8 +224,19 @@ export function NodeHoverCard({
     place(next) {
       applyPlacement(next);
     },
+    contains(x, y) {
+      const rect = placed.current;
+      return (
+        rect !== null &&
+        x >= rect.x &&
+        x <= rect.x + rect.width &&
+        y >= rect.y &&
+        y <= rect.y + rect.height
+      );
+    },
     hide() {
       anchor.current = null;
+      placed.current = null;
       size.current = { width: 0, height: 0 };
       setContent(null);
     },
@@ -206,15 +260,31 @@ export function NodeHoverCard({
       >
         <Card size="sm" className="w-max max-w-full">
           <CardContent className="flex flex-col gap-1">
-            <p className="truncate font-heading text-sm leading-snug font-medium">
+            <p className="font-heading truncate text-sm leading-snug font-medium">
               {content.name}
             </p>
-            <Row label="Assignee" value={content.assignee} />
-            <Row label="Status" value={content.status} />
-            {/* Static text, not an `<a>` or a `<button>`: a control a keyboard user
-                could reach that does nothing would be worse than one that is not
-                reachable at all (§9.4, FR-5). */}
-            <p className="text-xs text-muted-foreground/60">Open page</p>
+            {content.href !== null && (
+              <>
+                <Row label="Assignee" value={content.assignee} />
+                <Row label="Status" value={content.status} />
+                <p className="text-xs">
+                  <Link
+                    href={content.href}
+                    tabIndex={-1}
+                    className={cn(PROSE_LINK, "pointer-events-auto")}
+                    onPointerEnter={(event) =>
+                      notTouch(event, onLinkPointerEnter)
+                    }
+                    onPointerLeave={(event) =>
+                      notTouch(event, onLinkPointerLeave)
+                    }
+                    onClick={onLinkClick}
+                  >
+                    Open page
+                  </Link>
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -222,11 +292,16 @@ export function NodeHoverCard({
   );
 }
 
+/** A touch pointer has no hover: a tap enters and leaves in the same instant. */
+function notTouch(event: PointerEvent, handler: (() => void) | undefined) {
+  if (event.pointerType !== "touch") handler?.();
+}
+
 /** A label/value pair, read the way they are read elsewhere in the app (§9.4). */
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <p className="flex gap-2 text-xs">
-      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className="text-muted-foreground shrink-0">{label}</span>
       {/* `min-w-0` is what lets the truncation actually bite inside a flex row. */}
       <span className="min-w-0 truncate">{value}</span>
     </p>

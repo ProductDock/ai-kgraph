@@ -22,12 +22,13 @@ export const MAX_NAME_LENGTH = 60;
 export const MAX_ASSIGNEE_LENGTH = MAX_NAME_LENGTH;
 
 /**
- * Non-empty and free of surrounding whitespace. Shared by `name` and `assignee` so
- * the two cannot drift apart: both are hand-typed strings that end up drawn on
+ * Non-empty and free of surrounding whitespace. Shared by the seed's `name` and by
+ * the content frontmatter's `title`/`tags`/`assignee` (`content.ts`) so the rules
+ * cannot drift apart: all of them are hand-typed strings that end up drawn on
  * screen, and " Nemanja " is a different string from "Nemanja" in a way nobody
- * authoring the seed intends.
+ * authoring them intends.
  */
-function trimmedString(max: number) {
+export function trimmedString(max: number) {
   return z
     .string()
     .min(1)
@@ -38,26 +39,29 @@ function trimmedString(max: number) {
 }
 
 /**
+ * The closed set of status words (node-hover-card spec FR-4). Declared here, beside
+ * the rule for names, and imported by `content.ts`: the frontmatter is where a status
+ * is authored now, but a fourth word is still a failed build.
+ */
+export const nodeStatusSchema = z.enum(["Todo", "In Progress", "Done"]);
+
+/**
  * Recursive and `.strict()`: unknown keys fail. That is what mechanically enforces
- * the seed's shape - a misspelled `assignees` is a failed build naming the node, not
- * a field that silently does nothing (spec §7.3, §8.2; node-hover-card V-12).
+ * the seed's shape - a misspelled `childern`, or an `assignee`/`status` left over
+ * from before they moved to `content/`, is a failed build naming the node, not a
+ * field that silently does nothing (spec §7.3, §8.2; node-content-pages spec §7).
  *
- * `assignee` and `status` are the only fields beyond `name`/`children`, and both are
- * *rendered as text*, never as markup: the label layer and the hover card both set
- * `textContent`, so nothing here is a vector for injected markup.
+ * The seed holds `name` and `children` and nothing else. What a node says about the
+ * work lives in its content file's frontmatter, validated in `content.ts`.
  *
  * This schema owns the shape of a single node. The invariants that need the whole
  * tree - sibling uniqueness, the depth cap, the node budget - are enforced in
- * `tree.ts`, where the walk already knows each node's id path and can name it. The
- * *defaults* for `assignee`/`status` live there too, not here: the seed records what
- * was authored, `flatten()` decides what an unauthored node reads as.
+ * `tree.ts`, where the walk already knows each node's id path and can name it.
  */
 export const graphSeedSchema: z.ZodType<GraphSeed> = z.lazy(() =>
   z.strictObject({
     name: trimmedString(MAX_NAME_LENGTH),
     children: z.array(graphSeedSchema).optional(),
-    assignee: trimmedString(MAX_ASSIGNEE_LENGTH).optional(),
-    status: z.enum(["Todo", "In Progress", "Done"]).optional(),
   }),
 );
 

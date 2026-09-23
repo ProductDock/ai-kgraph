@@ -138,16 +138,57 @@ changes no file in it.
   and label-fade ranges are multiples of the **current view distance** for the same reason.
 - **Clicking a node frames its parent as well as its children**, so you can always see
   what the thing you clicked hangs off. The root has no parent and keeps its own framing.
-- The seed schema is `.strict()`: unknown keys fail the build. `status` and `assignee`
-  **have now arrived** (`intent/node-hover-card/`) and are the only fields beyond
-  `name`/`children`; page links are still deliberately not reserved. Both are optional in
-  the seed and **required on `GraphNode`** — `flatten()` resolves `"Unassigned"`/`"Todo"`
-  once, for every node with no exception, so the hub and the ring topics carry them too
-  and no consumer repeats the default. `status` is a closed set of three words, so a
-  fourth is a failed build; `assignee` is free text held only to the rule `name` is
-  (non-empty, trimmed, capped), so **a typo'd name ships silently** — a known, accepted
-  trade against maintaining a roster (spec C-2). A name in `seed.ts` is published to
-  every visitor at build time, not fetched per hover (spec C-1, accepted).
+- The seed schema is `.strict()`: unknown keys fail the build. It holds **`name` and
+  `children` and nothing else.** `status` and `assignee` arrived in the seed with
+  `intent/node-hover-card/` and **have left it again** for content frontmatter
+  (`intent/node-content-pages/`); on a seed node they are now unknown keys, and the build
+  fails naming the node. `GraphNode` no longer carries them either — they are resolved in
+  `content.ts`, not `flatten()`, and `buildScene()` copies them onto `GraphSceneNode`, so
+  the card and the scene read the same two fields they always did. Every node still gets
+  `"Unassigned"`/`"Todo"` when nothing says otherwise, the hub and ring topics included.
+  `status` is a closed set of three words (`nodeStatusSchema`), so a fourth is a failed
+  build; `assignee` is free text held only to the rule `name` is (`trimmedString`,
+  shared), so **a typo'd name ships silently** — a known, accepted trade against
+  maintaining a roster (node-hover-card C-2).
+- **A node's page is `content/<address>/index.md` or `content/<address>.md`, never
+  both** (`src/lib/graph/content.ts`). The address is the id without the root segment
+  (`pd-ai/n-node/rag` → `n-node/rag`, served at `/graph/n-node/rag`; `paths.ts`). Ids are
+  derived only from the files' own paths, never from a request. **Five things fail the
+  build, each naming the file:** a file that matches no node (a renamed or removed topic
+  orphans its file), two files for one node, an unknown frontmatter key (`.strict()`,
+  same reason as the seed), a `status` outside the three words, and `content/index.md` —
+  the hub has no page, `/graph` is its page. Frontmatter is `title`, `tags`, `status`,
+  `assignee`, and only `status`/`assignee` reach the graph; `title` changes the page
+  heading, never the tab title. Tags are lower-cased and de-duplicated silently.
+  `---js` frontmatter is refused rather than `eval`'d. The "No content yet" note keys on
+  an **empty body**, not on a missing file, so a file that only carries owner/status reads
+  the same as none. **Images** live at `public/content/<address>/<file>` and are referenced
+  as `/content/<address>/<file>` — not `public/graph/…`, which would collide with the
+  `/graph/[...slug]` route. **Links between pages are not checked** (spec C-4): a renamed
+  topic leaves a dead link on another page with nothing catching it. Everything written
+  there is public on merge (spec C-1, accepted). Markdown renders through
+  `components/common/markdown-body.tsx` with **no `rehype-raw`** and react-markdown's
+  default `urlTransform` — that pair is what keeps raw HTML inert and drops `javascript:`
+  hrefs, so neither is a setting to "fix". Code-block colours are `.hljs-*` rules in
+  `globals.css`, held to 4.5:1 against `--surface-1` in both themes by
+  `code-highlight.contract.test.ts`; only the three text inks and `--graph-hub` clear
+  that in both, which is why the scheme is ink and blue.
+- **An unknown `/graph/<x>` gets the graph-scoped not-found with HTTP 200, not 404.**
+  `[...slug]/page.tsx` sets `dynamicParams = true` on purpose: under `false` the router
+  404s before the segment is reached and the sitewide "Back to home" page renders. Under
+  `true` the page's own `notFound()` reaches `graph/not-found.tsx` — but the root
+  `app/loading.tsx` wraps every route in Suspense, so the response has already started
+  streaming and Next can only mark it `noindex`, not change the status. Measured: with no
+  loading boundary anywhere it is a 404. Known pages are unaffected — all still prerender.
+- **Editing topics and pages is a skill, not a code task:** `.claude/skills/graph-topic/`
+  walks anyone through `seed.ts` and `content/`, including renames that move files, and
+  opens a PR. Keep it in step when a rule below changes. **Tests never pin the live tree
+  or its pages.** Anything needing exact names, owners or bodies runs against
+  `src/lib/graph/__fixtures__/` (a frozen seed and `content/`). Tests over the live files
+  (`page.live.test.tsx`, the live-tree cases in `content.test.ts`, `tree.test.ts`, and the
+  real-seed layout and colour checks) assert only what holds for any content. A test
+  that has to change whenever someone writes a page is a bug in the test. Content-only
+  PRs run `verify.yml` too: `content/**` is re-included after the `**.md` ignore.
 - Node ids are the slugified name path (`pd-ai/ai-agents/workflows/n8n`), so **sibling
   names must be unique**. A duplicate fails the build. The path includes the root, so
   **renaming the root moves every id in the tree** — that is a find-and-replace across
@@ -223,11 +264,30 @@ changes no file in it.
   is an interruption, not a hint. A long-press sets `longPressConsumed`, which is what
   stops the `pointerup` that follows from *also* flying the camera; if that flag ever
   stuck, every later click would silently stop focusing, so it is cleared on read **and**
-  on the next press. The card layer is entirely `pointer-events: none` — nothing on it is
-  interactive, and a card that took events would block an orbit drag started over it.
-  Opening one forces the label pass open (`lastLabelsAt = 0`) as well as calling
+  on the next press. The card layer is `pointer-events: none` **except for one element,
+  the "Open page" link** — anything else on it that took events would block an orbit drag
+  started over it. The link is `tabIndex={-1}` because it sits inside an `aria-hidden`
+  layer, where a tab stop is one a screen reader never announces. Entering it fires the
+  canvas's `pointerleave`, so a desktop card closes **`CARD_CLOSE_GRACE_MS` (200ms)
+  after** the pointer leaves its node, and the link's own hover cancels that; node-to-node
+  still swaps instantly and a drag still closes it at once. Because the card body is
+  see-through, a pointer resting on it reaches the canvas as "empty space" — so the scene
+  asks `cardRef.contains()` (the card's last placed rect, never a DOM read) on every idle
+  move, and while that is true it keeps the card open and does not swap it for a node
+  drawn behind it. A press is not idle, so a drag started on the card still orbits. The hub's card is its name
+  alone — no rows, no link. Opening one forces the label pass open (`lastLabelsAt = 0`) as well as calling
   `invalidate()`: the throttle would otherwise swallow the one frame the card had to be
   placed in, and it would sit unplaced for good.
+- **Arriving at `/graph` is one of three openings, in this order: restore, focus, intro.**
+  A view saved when "Open page" was clicked is restored **only** when `/graph` is re-entered
+  by Back/Forward (`stores/graph-view-store.ts`), so "Back to AI Learning Graph" — a link —
+  still opens the overview. Otherwise `?focus=<address>` flies straight to that node from
+  the opening framing, with no sweep; an unknown value falls through silently. `?focus=` is
+  read from `window.location` inside the scene, **not** from `searchParams` in
+  `graph/page.tsx`: reading it there would opt the route out of prerendering. The store's
+  `popstate` listener is module-scoped and never removed on purpose — it must have seen
+  the navigation before the scene mounts to ask. `take()` clears on the next task, not at
+  once, because Strict Mode mounts the scene's effect twice in development.
 - **Accessibility of the scene is known, recorded debt**, not an oversight: the canvas is
   unreachable by keyboard and opaque to a screen reader. The page _chrome_ meets WCAG 2.2
   AA. See `intent/graph-accessibility/intent.md`.

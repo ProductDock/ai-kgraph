@@ -114,13 +114,6 @@ export function flatten(seed: GraphSeed): {
       parentId,
       leafCount: 1,
       hasChildren: children.length > 0,
-      // Resolved once, here, so no consumer ever has to know what an unauthored
-      // node reads as. Applied to every node with no exception - the hub and the
-      // ring topics are categories rather than pieces of work and will read
-      // "Unassigned"/"Todo", which is the decision, not an oversight
-      // (node-hover-card spec §3 Q3, C-5).
-      assignee: node.assignee ?? "Unassigned",
-      status: node.status ?? "Todo",
     });
     if (parentId !== null) edges.push({ sourceId: parentId, targetId: id });
 

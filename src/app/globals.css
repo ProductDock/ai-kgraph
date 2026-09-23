@@ -293,3 +293,44 @@
     var(--graph-space-far) 100%
   );
 }
+
+/*
+ * Code-block highlighting (node-content-pages spec §9.4, D-6). rehype-highlight
+ * only adds `hljs-*` classes; these map the ones it actually emits onto role tokens
+ * that already exist, instead of shipping a third-party theme that never went
+ * through the brand mapping.
+ *
+ * Every colour here must clear 4.5:1 against --surface-1 (the code block's own
+ * background) in BOTH themes, and `code-highlight.contract.test.ts` asserts it by
+ * reading this block. That leaves very few candidates. The brand accents are
+ * constant across themes, and none of them passes in both: --focus-ring is 4.20 light
+ * and 3.68 dark, and --accent-secondary-hover is 4.46 light. What remains is the
+ * three text inks plus --graph-hub, which is the brand blue already stepped darker
+ * (light) and lighter (dark) to be read against the page. So the scheme is ink and
+ * blue, with weight and italics doing the rest. Every token below is theme-aware
+ * already, so no per-scope override block is needed.
+ */
+.hljs-keyword,
+.hljs-literal,
+.hljs-type,
+.hljs-built_in,
+.hljs-number {
+  color: var(--graph-hub);
+}
+.hljs-keyword {
+  font-weight: 500;
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-attr,
+.hljs-property {
+  color: var(--text-secondary);
+}
+.hljs-comment {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.hljs-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}

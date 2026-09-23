@@ -66,7 +66,7 @@ describe("layout", () => {
     const positions = layout(nodes);
 
     expect(positions.size).toBe(nodes.length);
-    expect(positions.get("pd-ai")).toEqual([0, 0, 0]);
+    expect(positions.get(nodes[0]!.id)).toEqual([0, 0, 0]);
     expect(
       nodes.filter((node) => lengthOf(positions.get(node.id)!) === 0),
     ).toHaveLength(1);
