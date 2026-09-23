@@ -72,7 +72,7 @@ Images are not added. The convention is documented in `CLAUDE.md`: `public/conte
 
 | Path | Change |
 | --- | --- |
-| `src/app/graph/[...slug]/page.tsx` **(new, Server Component)** | `export const dynamicParams = false`. `generateStaticParams()` → `flatten(seed).nodes.filter(n => n.parentId !== null).map(n => ({ slug: nodeAddress(n.id).split("/") }))`. `generateMetadata({ params })` → `title: node.name` (spec Q6: the node's name, never frontmatter `title`). `Page({ params }: { params: Promise<{ slug: string[] }> })` awaits params, resolves the id with `nodeIdFromAddress`, and calls `notFound()` if the id is unknown. That guard is defensive only. It renders a `<main id="main-content">` inside a `max-w-3xl` column, containing, in this order: (1) a header row with `← Back to AI Learning Graph` (`/graph`), `View Graph` (`/graph?focus=<address>`) and `<ThemeToggle />`; (2) `<nav aria-label="Breadcrumb"><ol>`, where the hub crumb links to `/graph`, each ancestor links to `nodeHref`, and the current node is plain text with `aria-current="page"`; (3) `<h1>` = `content.title`, heading type per the design-system skill; (4) tags as `rounded-full` hairline pills (`text-xs text-muted-foreground`, omitted when empty); (5) `<dl>` with Assignee and Status; (6) `<MarkdownBody>`, or `<p>No content yet.</p>` when `body === ""`; (7) when the node has children, `<h2>Key Topics</h2>` and a `<ul>` of `<Link href={nodeHref(child.id)}>{child.name}</Link>`. A leaf has no Key Topics section, so there is never an empty heading. `loadNodeContent(seed)` and `flatten(seed)` run per page at build time, which spec §8 accepts as cheap. |
+| `src/app/graph/[...slug]/page.tsx` **(new, Server Component)** | `export const dynamicParams = true` (planned as `false`; see Deviation 1). `generateStaticParams()` → `flatten(seed).nodes.filter(n => n.parentId !== null).map(n => ({ slug: nodeAddress(n.id).split("/") }))`. `generateMetadata({ params })` → `title: node.name` (spec Q6: the node's name, never frontmatter `title`). `Page({ params }: { params: Promise<{ slug: string[] }> })` awaits params, resolves the id with `nodeIdFromAddress`, and calls `notFound()` if the id is unknown. That guard is defensive only. It renders a `<main id="main-content">` inside a `max-w-3xl` column, containing, in this order: (1) a header row with `← Back to AI Learning Graph` (`/graph`), `View Graph` (`/graph?focus=<address>`) and `<ThemeToggle />`; (2) `<nav aria-label="Breadcrumb"><ol>`, where the hub crumb links to `/graph`, each ancestor links to `nodeHref`, and the current node is plain text with `aria-current="page"`; (3) `<h1>` = `content.title`, heading type per the design-system skill; (4) tags as `rounded-full` hairline pills (`text-xs text-muted-foreground`, omitted when empty); (5) `<dl>` with Assignee and Status; (6) `<MarkdownBody>`, or `<p>No content yet.</p>` when `body === ""`; (7) when the node has children, `<h2>Key Topics</h2>` and a `<ul>` of `<Link href={nodeHref(child.id)}>{child.name}</Link>`. A leaf has no Key Topics section, so there is never an empty heading. `loadNodeContent(seed)` and `flatten(seed)` run per page at build time, which spec §8 accepts as cheap. |
 | `src/app/graph/[...slug]/loading.tsx` **(new)** | A content-page skeleton. Without it, the parent `src/app/graph/loading.tsx` wraps these pages too and would flash the *graph* skeleton ("Loading the AI knowledge graph") during navigation. |
 | `src/app/graph/[...slug]/page.test.tsx` **(new)** | `generateStaticParams()` equals every non-hub `nodeAddress` from `flatten(seed)` and excludes the hub (**V-5, V-9**). Render `await Page({ params: Promise.resolve({ slug: ["n-node","rag"] }) })`: title, `Nemanja Vasic`, `Done`, the body sentence, Key Topics = [`Vector db`] linking to `/graph/n-node/rag/vector-db`, breadcrumb `PD AI › n Node`, and `View Graph` href `/graph?focus=n-node/rag`. Render Evals (a file with no body) and Techniques (no file): both show "No content yet" and both have Key Topics (**V-6, V-7**). Render a leaf: no Key Topics heading. |
 | `src/app/graph/not-found.tsx` **(new)** | Copy of `src/app/not-found.tsx` with "Back to the graph" → `/graph` (spec D-2, C-5). The root `not-found.tsx` is unchanged. |
@@ -235,8 +235,9 @@ the proof and must not be skipped silently.
    ```bash
    curl -s  localhost:3000/graph/n-node/rag | grep -c 'Nemanja Vasic'      # ≥1
    curl -s  localhost:3000/graph/n-node/evals | grep -c 'No content yet'   # ≥1
-   curl -so /dev/null -w '%{http_code}\n' localhost:3000/graph/nope        # 404
+   curl -so /dev/null -w '%{http_code}\n' localhost:3000/graph/nope        # 200 - not 404; see Deviation 1
    curl -s  localhost:3000/graph/nope | grep -c 'Back to the graph'        # ≥1  (R-1)
+   curl -s  localhost:3000/graph/nope | grep -c 'content="noindex"'        # ≥1
    curl -so /dev/null -w '%{http_code}\n' 'localhost:3000/graph?focus=n-node/rag'   # 200
    ```
 4. **Security spot-check.** Proof step 1's greps cover it, together with
@@ -256,6 +257,64 @@ the proof and must not be skipped silently.
    - FR-6: node-to-node hover swaps instantly, and leaving to empty space closes within about 200 ms.
    - WCAG: Tab through a content page. Every link shows the focus ring. Headings are in order `h1 → h2`. Check both themes.
 6. **Record** anything from Proof step 5 that could not be run (e.g. no real tablet) in the PR body.
+
+## Deviations found while building
+
+Each of these was measured, not assumed. The code comments point back here.
+
+1. **R-1 materialised, and it brought a second finding.** Under `dynamicParams = false`,
+   an unmatched `/graph/nope` does 404, but the router rejects it before the segment is
+   reached, so the **sitewide** "Back to home" page renders. Following R-1's mitigation,
+   `[...slug]/page.tsx` now sets `dynamicParams = true`, and its `notFound()` guard is the
+   mechanism: `graph/not-found.tsx` renders with "Back to the graph". All 35 known pages
+   are still SSG (●). The second finding: the response is **HTTP 200 with
+   `<meta name="robots" content="noindex">`**, not 404. The root `src/app/loading.tsx`
+   wraps every route in Suspense, so the body has already started streaming when
+   `notFound()` throws, and Next can no longer change the status. This was measured by
+   moving every `loading.tsx` aside: the same request is then a 404 with the graph-scoped
+   page. Removing the root loading boundary is out of scope. The remaining alternative, a
+   `proxy.ts` check, would add the first runtime server surface, which spec §10 rules out.
+   **Decided 2026-09-23: the originator accepted the soft 404.** An unknown address gets
+   the right page, marked `noindex`, with status 200.
+2. **Code colours: the plan's `--accent-secondary-hover` fails.** It measures **4.46:1**
+   on light `--surface-1`. No brand accent clears 4.5:1 in both themes (`--focus-ring` is
+   4.20 / 3.68). The only tokens that do are the three text inks and `--graph-hub` (the
+   brand blue already stepped darker and lighter for contrast), so the scheme is ink and
+   blue, with weight and italics doing the rest. Every token used is theme-aware already,
+   so no per-scope `.hljs` block was needed. `code-highlight.contract.test.ts` holds it.
+3. **Code blocks are `rounded-xl`, not `rounded-lg`.** In this app `--radius-lg` is
+   `9999px` (the pill) and `rounded-xl` is the 10px card radius (`globals.css`,
+   design-system skill).
+4. **Links are ink with a brand-blue underline, not the blue `text-primary`.** Blue
+   `#027ac2` is **4.26:1** on the dark page, under AA for text. The underline also
+   satisfies WCAG 1.4.1. The class is `PROSE_LINK` in a new, import-free
+   `components/common/link-styles.ts`, so the hover card can share it without pulling
+   `react-markdown` into the scene bundle.
+5. **The link hold is a flag (`cardHeld`), not just a cancelled timer.** React derives
+   `onPointerEnter` from the `pointerout` that fires **before** the canvas's native
+   `pointerleave`, so the hold arrived first and the leave re-scheduled the close.
+   Measured in the browser: the card closed 200 ms after the pointer came to rest on the
+   link. `scheduleCloseCard()` now respects the flag, and `closeCard()` clears it.
+6. **`take()` clears on the next task, not at once.** React Strict Mode (on by default in
+   the App Router) mounts the scene's effect, unmounts it and mounts it again in
+   development. A take that cleared immediately would restore into the mount that gets
+   thrown away.
+7. **`---js` frontmatter is refused.** gray-matter `eval`s it by default. `content.ts`
+   replaces that engine with one that throws, which fails the build naming the file. This
+   is covered by a test.
+8. **V-18, read precisely.** A focused node's emphasis is the scene's one deliberately
+   endless animation, paced at 30 fps (`EMPHASIS_FRAME_MS`, pre-existing). "Zero frames
+   while idle" therefore holds for every **unfocused** idle state: after the intro, after
+   hovers, and after a stale `?focus=`. The restore and `?focus=` openings, which both
+   focus a node, measure **30 frames per 1.5 s**, which is exactly what a click-focus
+   already did. They add no new frame source.
+9. **How Proof step 5 was run.** It was a script (Playwright + system Chrome, headless,
+   SwiftShader WebGL) against `npm run start`, with the touch check done by long-pressing
+   through CDP touch events. All 32 checks passed, covering V-1–V-4, V-10, V-14–V-16,
+   V-18, FR-6, FR-8, the hover gap, the Back-to-graph link and WCAG headings/focus rings
+   in both themes. What it does **not** cover: a real GPU, a real tablet, and a human eye
+   on the motion (for example, whether the `?focus=` fly-in reads as one continuous
+   move).
 
 ## Handoff
 

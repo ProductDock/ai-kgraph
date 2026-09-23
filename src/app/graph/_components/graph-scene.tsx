@@ -38,7 +38,9 @@ import {
   TINT_CEILING,
 } from "@/lib/graph/colour";
 import { familyShade } from "@/lib/graph/colour-metrics";
+import { nodeHref, nodeIdFromAddress } from "@/lib/graph/paths";
 import type { GraphScene, GraphSceneNode } from "@/lib/graph/types";
+import { useGraphViewStore } from "@/stores/graph-view-store";
 import {
   declutter,
   GraphLabels,
@@ -261,6 +263,14 @@ const CLICK_SLOP_PX = 5;
  * only ever measured against a finger holding still (spec §9.2, FR-7).
  */
 const LONG_PRESS_MS = 450;
+/**
+ * How long a desktop card outlives the pointer leaving its node (node-content-pages
+ * plan, "Hover gap"). Without it the card closes the instant the pointer crosses
+ * the gap towards it - and entering the "Open page" link itself fires the canvas's
+ * `pointerleave` - so the one link on it could never be clicked. Node-to-node stays
+ * instant, and a drag still closes the card at once (FR-11). A tuning value.
+ */
+const CARD_CLOSE_GRACE_MS = 200;
 const LABEL_INTERVAL_MS = 1000 / 30;
 
 const WORLD_UP = new Vector3(0, 1, 0);
@@ -307,6 +317,12 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
   const tokensRef = useRef<Record<string, string>>({});
   const applyTokensRef = useRef<(() => void) | null>(null);
   const invalidateRef = useRef<(() => void) | null>(null);
+  /** What the card's link reports back into the effect, published the same way. */
+  const cardLinkRef = useRef<{
+    hold: () => void;
+    release: () => void;
+    navigate: () => void;
+  } | null>(null);
 
   const tokens = useThemeTokens(SCENE_TOKENS);
 
@@ -1625,6 +1641,17 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       }
       const distance = extent / Math.sin((CAMERA_FOV * Math.PI) / 360);
 
+      markFocused(index);
+      flyTo(centre, distance);
+    }
+
+    /**
+     * Everything focusing a node does except move the camera. Split out so a view
+     * restored on Back can put the focus back exactly where the camera already is,
+     * without flying anywhere.
+     */
+    function markFocused(index: number) {
+      const node = nodes[index]!;
       const previous = focusedIdRef.current;
       if (previous !== null && previous !== node.id) {
         const previousIndex = indexById.get(previous);
@@ -1634,7 +1661,6 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       focusedIdRef.current = node.id;
       setScaleTarget(index, FOCUS_SCALE);
       startEmphasis(index);
-      flyTo(centre, distance);
     }
 
     function showOverview() {
@@ -1674,6 +1700,16 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      * it would do it silently.
      */
     let longPressConsumed = false;
+    /** A desktop card's pending close, `CARD_CLOSE_GRACE_MS` after its node was left. */
+    let cardCloseTimer: ReturnType<typeof setTimeout> | null = null;
+    /**
+     * The pointer is on the card's link. A flag, not just a cancelled timer: React
+     * derives the link's `onPointerEnter` from the `pointerout` that fires *before*
+     * the canvas's own `pointerleave`, so the hold arrives first and the leave would
+     * otherwise schedule a fresh close straight after it. Measured: without this the
+     * card closed 200ms after the pointer came to rest on the link.
+     */
+    let cardHeld = false;
 
     function openCard(index: number) {
       const node = nodes[index]!;
@@ -1682,6 +1718,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         name: node.name,
         assignee: node.assignee,
         status: node.status,
+        // The hub has no page - `/graph` is its page - so its card is its name.
+        href: node.parentId === null ? null : nodeHref(node.id),
       });
       // `updateLabels` early-returns wholesale when throttled. On an idle page the
       // `invalidate()` below is the only frame that will ever run, so if one
@@ -1694,10 +1732,54 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     function closeCard() {
+      cancelScheduledClose();
+      // A card that goes away takes its link with it, and a removed element never
+      // reports the pointer leaving it.
+      cardHeld = false;
       if (cardNodeIndex === null) return;
       cardNodeIndex = null;
       cardRef.current?.hide();
     }
+
+    /** Close after the grace period, unless something holds the card open first. */
+    function scheduleCloseCard() {
+      if (cardNodeIndex === null || cardHeld || cardCloseTimer !== null) return;
+      cardCloseTimer = setTimeout(() => {
+        cardCloseTimer = null;
+        if (disposed) return;
+        closeCard();
+      }, CARD_CLOSE_GRACE_MS);
+    }
+
+    function cancelScheduledClose() {
+      if (cardCloseTimer === null) return;
+      clearTimeout(cardCloseTimer);
+      cardCloseTimer = null;
+    }
+
+    /**
+     * The view to come back to, saved as "Open page" is clicked and before Next
+     * navigates away and this effect tears down (FR-2).
+     */
+    function saveView() {
+      useGraphViewStore.getState().save({
+        position: camera.position.toArray(),
+        target: controls.target.toArray(),
+        focusedId: focusedIdRef.current,
+      });
+    }
+
+    cardLinkRef.current = {
+      hold: () => {
+        cardHeld = true;
+        cancelScheduledClose();
+      },
+      release: () => {
+        cardHeld = false;
+        scheduleCloseCard();
+      },
+      navigate: saveView,
+    };
 
     function cancelLongPress() {
       if (longPressTimer === null) return;
@@ -1742,9 +1824,14 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       // no button down. A button down may already be an orbit drag, and a card
       // appearing in the middle of one is an interruption, not a hint (FR-11).
       if (index !== null && pressedAt === null) {
+        cancelScheduledClose();
         if (index !== cardNodeIndex) openCard(index);
-      } else {
+      } else if (pressedAt !== null) {
         closeCard();
+      } else {
+        // Off the node but not dragging: the pointer may be on its way to the
+        // card's link, so the card gets a moment rather than vanishing.
+        scheduleCloseCard();
       }
     }
 
@@ -1804,6 +1891,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      * hover when the pointer exits it - and an open card would stay up over the
      * page chrome after the pointer had gone (FR-6).
      *
+     * The close is deferred by `CARD_CLOSE_GRACE_MS`, so a pointer that has gone to
+     * the page chrome still takes the card with it, just not instantly.
+     *
      * `pressedAt` is deliberately left alone: a drag that runs off the canvas and
      * back is still that drag, and clearing it here would change click handling
      * this feature has no business changing.
@@ -1812,7 +1902,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       hoveredIndex = null;
       canvas.style.cursor = "grab";
       cancelLongPress();
-      closeCard();
+      // Scheduled, not immediate: moving onto the card's link leaves the canvas too,
+      // and the link's own `pointerenter` is what cancels this.
+      scheduleCloseCard();
     }
 
     /** A cancelled touch leaves a timer that would otherwise fire over nothing. */
@@ -1872,10 +1964,42 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       .copy(opening.target)
       .addScaledVector(openingDirection, opening.distance);
     introBase.copy(camera.position).sub(controls.target);
+
+    // ---- arrival: restore > focus > intro (node-content-pages §9.6) -------------
+    // Restore outranks `?focus=`: after View Graph -> orbit -> Open page -> Back the
+    // URL still names the node, but the snapshot is the view actually left.
+    //
+    // `?focus=` is read from `window.location` here, not threaded down as a prop:
+    // reading `searchParams` in `graph/page.tsx` would opt the route out of
+    // prerendering (plan, "Deviation from spec §7"). This effect only runs in the
+    // browser, behind `ssr: false`, so there is no server render to disagree with.
+    const restored = useGraphViewStore.getState().take();
+    const rootId = nodes.find((node) => node.parentId === null)?.id;
+    const focusAddress = new URLSearchParams(window.location.search).get(
+      "focus",
+    );
+    const focusId =
+      rootId && focusAddress ? nodeIdFromAddress(rootId, focusAddress) : null;
+    // An unknown or empty value falls through to the overview, silently (D-1).
+    const focusIndex = focusId === null ? undefined : indexById.get(focusId);
+
     // Reduced motion gets the floor and the still frame it already reads as 3D
     // from, and none of the sweep.
     const stillness = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (!stillness.matches) {
+    if (restored) {
+      controls.target.set(...restored.target);
+      camera.position.set(...restored.position);
+      controls.update();
+      const restoredIndex =
+        restored.focusedId === null
+          ? undefined
+          : indexById.get(restored.focusedId);
+      if (restoredIndex !== undefined) markFocused(restoredIndex);
+    } else if (focusIndex !== undefined) {
+      // From the opening framing straight into the node: one continuous fly-in on
+      // the click path's own `flyTo`, with no sweep first and no new frame source.
+      focusNode(focusIndex);
+    } else if (!stillness.matches) {
       const introDirection = openingDirection
         .clone()
         .applyAxisAngle(WORLD_UP, -INTRO_SWEEP);
@@ -1899,8 +2023,10 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       if (frame) cancelAnimationFrame(frame);
       if (emphasisTimer !== null) clearTimeout(emphasisTimer);
       if (longPressTimer !== null) clearTimeout(longPressTimer);
+      if (cardCloseTimer !== null) clearTimeout(cardCloseTimer);
       invalidateRef.current = null;
       applyTokensRef.current = null;
+      cardLinkRef.current = null;
 
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerdown", onPointerDown);
@@ -1961,7 +2087,12 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       <GraphLabels ref={labelsRef} />
       {/* After the labels, so the card paints above them; both are positioned, so
           both paint above the imperatively-appended canvas. */}
-      <NodeHoverCard ref={cardRef} />
+      <NodeHoverCard
+        ref={cardRef}
+        onLinkPointerEnter={() => cardLinkRef.current?.hold()}
+        onLinkPointerLeave={() => cardLinkRef.current?.release()}
+        onLinkClick={() => cardLinkRef.current?.navigate()}
+      />
       {/* The focused node is React state rather than a plain ref because this
           line re-renders with it. The effect reads `focusedIdRef`, so flying to a
           node never rebuilds the scene. */}

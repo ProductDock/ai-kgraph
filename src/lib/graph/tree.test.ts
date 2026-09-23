@@ -68,71 +68,17 @@ describe("flatten", () => {
     expect(() => flatten(strayField)).toThrow(/unrecognized|Unrecognized/);
   });
 
-  // node-hover-card V-11
-  it("defaults a node with neither field to Unassigned/Todo", () => {
-    const byId = new Map(flatten(seed).nodes.map((node) => [node.id, node]));
-
-    // No exception for the hub or a ring topic: they are categories rather than
-    // pieces of work and read the default like anything else (spec §3 Q3, C-5).
-    expect(byId.get("pd-ai")).toMatchObject({
-      assignee: "Unassigned",
-      status: "Todo",
-    });
-    expect(byId.get("pd-ai/protocols")).toMatchObject({
-      assignee: "Unassigned",
-      status: "Todo",
-    });
-    expect(
-      flatten(seed).nodes.every(
-        (node) => node.assignee.length > 0 && node.status.length > 0,
-      ),
-    ).toBe(true);
-  });
-
-  // node-hover-card V-11
-  it("keeps what a node authored for itself", () => {
-    const authored: GraphSeed = {
+  // node-content-pages §7. Owner and status moved to `content/` frontmatter, so on a
+  // seed node they are now just unknown keys - the build fails naming the node, which
+  // is the signal an in-flight PR that still edits them gets.
+  it("rejects assignee and status on a seed node, naming the node", () => {
+    const stale = {
       name: "AI",
-      children: [
-        { name: "RAG", assignee: "Nemanja Vasic", status: "Done" },
-        { name: "Evals", status: "In Progress" },
-      ],
-    };
-    const byId = new Map(flatten(authored).nodes.map((n) => [n.id, n]));
-
-    expect(byId.get("ai/rag")).toMatchObject({
-      assignee: "Nemanja Vasic",
-      status: "Done",
-    });
-    // Status without an assignee keeps the status and still defaults the name.
-    expect(byId.get("ai/evals")).toMatchObject({
-      assignee: "Unassigned",
-      status: "In Progress",
-    });
-  });
-
-  // node-hover-card V-12
-  it("still rejects an unknown key, and a bad value, alongside the new fields", () => {
-    const misspelled = {
-      name: "AI",
-      children: [{ name: "RAG", assignees: "Nemanja Vasic", status: "Done" }],
+      children: [{ name: "RAG", assignee: "Nemanja Vasic", status: "Done" }],
     } as unknown as GraphSeed;
-    expect(() => flatten(misspelled)).toThrow(/RAG/);
 
-    // `status` is a closed set, so a fourth word is a failed build naming the
-    // node rather than a word the card would have to render (FR-4).
-    const badStatus = {
-      name: "AI",
-      children: [{ name: "RAG", status: "Blocked" }],
-    } as unknown as GraphSeed;
-    expect(() => flatten(badStatus)).toThrow(/RAG/);
-
-    // And an assignee is held to the same rule `name` is.
-    const untrimmed = {
-      name: "AI",
-      children: [{ name: "RAG", assignee: " Nemanja " }],
-    } as unknown as GraphSeed;
-    expect(() => flatten(untrimmed)).toThrow(/whitespace/);
+    expect(() => flatten(stale)).toThrow(/RAG/);
+    expect(() => flatten(stale)).toThrow(/unrecognized|Unrecognized/);
   });
 
   // V-5

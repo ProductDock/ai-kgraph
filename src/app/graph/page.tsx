@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/common/theme-toggle";
+import { loadNodeContent } from "@/lib/graph/content";
 import { buildScene } from "@/lib/graph/scene";
 import { seed } from "@/lib/graph/seed";
 import { BranchKey } from "./_components/branch-key";
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
  * `graph-view.tsx`, which is what keeps it out of the home page's chunk (NFR-3).
  */
 export default function GraphPage() {
-  const scene = buildScene(seed);
+  const scene = buildScene(seed, loadNodeContent(seed));
 
   return (
     // The root layout's skip link targets #main-content and nothing else on this
