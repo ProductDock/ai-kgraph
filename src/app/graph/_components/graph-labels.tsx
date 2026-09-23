@@ -355,7 +355,10 @@ export function GraphLabels({
             textOverflow: "ellipsis",
             fontSize: `${LABEL_FONT_PX}px`,
             fontWeight: 500,
-            lineHeight: 1,
+            // Not 1: `overflow: hidden` clips to the line box, and at 1 that box
+            // cuts Poppins' descenders (the tail of a "g"). Matching the declutter's
+            // own height keeps the drawn box and the reserved box the same.
+            lineHeight: `${LABEL_HEIGHT}px`,
             color: "var(--text-primary)",
             // The 2px surface ring that keeps text legible where it crosses a node.
             textShadow:
