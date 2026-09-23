@@ -261,7 +261,11 @@ changes no file in it.
   layer, where a tab stop is one a screen reader never announces. Entering it fires the
   canvas's `pointerleave`, so a desktop card closes **`CARD_CLOSE_GRACE_MS` (200ms)
   after** the pointer leaves its node, and the link's own hover cancels that; node-to-node
-  still swaps instantly and a drag still closes it at once. The hub's card is its name
+  still swaps instantly and a drag still closes it at once. Because the card body is
+  see-through, a pointer resting on it reaches the canvas as "empty space" — so the scene
+  asks `cardRef.contains()` (the card's last placed rect, never a DOM read) on every idle
+  move, and while that is true it keeps the card open and does not swap it for a node
+  drawn behind it. A press is not idle, so a drag started on the card still orbits. The hub's card is its name
   alone — no rows, no link. Opening one forces the label pass open (`lastLabelsAt = 0`) as well as calling
   `invalidate()`: the throttle would otherwise swallow the one frame the card had to be
   placed in, and it would sit unplaced for good.

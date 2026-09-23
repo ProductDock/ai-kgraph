@@ -1689,6 +1689,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     const raycaster = new Raycaster();
     const pointer = new Vector2();
     let hoveredIndex: number | null = null;
+    /** `hoveredIndex` while the pointer is over the open card rather than a node. */
+    const OVER_CARD = -1;
     let pressedAt: { x: number; y: number } | null = null;
     /** Which node's card is open, if any. Read by `placeCard` every frame. */
     let cardNodeIndex: number | null = null;
@@ -1787,6 +1789,16 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       longPressTimer = null;
     }
 
+    /** The canvas fills the container, so its local pixels are the card's too. */
+    function overCard(event: PointerEvent): boolean {
+      if (cardNodeIndex === null || !cardRef.current) return false;
+      const rect = canvas.getBoundingClientRect();
+      return cardRef.current.contains(
+        event.clientX - rect.left,
+        event.clientY - rect.top,
+      );
+    }
+
     function pick(event: PointerEvent): number | null {
       const rect = canvas.getBoundingClientRect();
       pointer.set(
@@ -1799,6 +1811,20 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     function onPointerMove(event: PointerEvent) {
+      // Over the open card, with no button down: the card is see-through to pointer
+      // events, so this move reaches the canvas as if the pointer were over empty
+      // space - and would close the card as it is being read, or swap it for a node
+      // drawn behind it. The card wins until the pointer leaves it. A press still
+      // goes straight through to the canvas and orbits (FR-4).
+      if (event.pointerType !== "touch" && pressedAt === null && overCard(event)) {
+        cancelScheduledClose();
+        // Not a node index: it only guarantees the next move off the card differs
+        // from this one, so the cursor is set again when the pointer leaves.
+        hoveredIndex = OVER_CARD;
+        canvas.style.cursor = "default";
+        return;
+      }
+
       // Hover only changes the cursor and raises the card: the circle keeps its
       // size, so size stays the answer to "is this a group" alone (FR-10).
       const index = pick(event);

@@ -295,6 +295,11 @@ Each of these was measured, not assumed. The code comments point back here.
    `pointerleave`, so the hold arrived first and the leave re-scheduled the close.
    Measured in the browser: the card closed 200 ms after the pointer came to rest on the
    link. `scheduleCloseCard()` now respects the flag, and `closeCard()` clears it.
+   A second gap was found after review: resting on the card's **body**, not its link,
+   still closed it, because the see-through body lets that move reach the canvas as
+   empty space. `NodeHoverCardHandle.contains()` now reports whether a point is over the
+   card as last placed, and an idle move over it keeps the card open and blocks a swap
+   to a node behind it. A press still goes through, so FR-4 holds.
 6. **`take()` clears on the next task, not at once.** React Strict Mode (on by default in
    the App Router) mounts the scene's effect, unmounts it and mounts it again in
    development. A take that cleared immediately would restore into the mount that gets

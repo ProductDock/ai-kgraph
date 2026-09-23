@@ -389,6 +389,31 @@ describe("NodeHoverCard, once it has a size", () => {
     expect(screen.getByText("Evals")).toBeTruthy();
   });
 
+  // The card is see-through to pointer events, so this is how the scene knows the
+  // pointer has moved onto it rather than off into empty space.
+  it("reports whether a point is over the card as placed", () => {
+    const ref = mount();
+    act(() => ref.current!.show(content));
+    act(() => ref.current!.place(anchor()));
+
+    // Placed at (512, 254), 180 x 92.
+    expect(ref.current!.contains(512, 254)).toBe(true);
+    expect(ref.current!.contains(600, 300)).toBe(true);
+    expect(ref.current!.contains(692, 346)).toBe(true);
+    expect(ref.current!.contains(505, 300)).toBe(false);
+    expect(ref.current!.contains(600, 350)).toBe(false);
+  });
+
+  it("contains nothing once hidden, or before it has been placed", () => {
+    const ref = mount();
+    act(() => ref.current!.show(content));
+    expect(ref.current!.contains(600, 300)).toBe(false);
+
+    act(() => ref.current!.place(anchor()));
+    act(() => ref.current!.hide());
+    expect(ref.current!.contains(600, 300)).toBe(false);
+  });
+
   it("re-places itself when the content changes under an open card", () => {
     const ref = mount();
     act(() => ref.current!.show(content));

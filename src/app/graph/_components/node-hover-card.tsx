@@ -103,6 +103,13 @@ export interface NodeHoverCardHandle {
   /** Move it to its node. Cheap: no React state, no DOM measurement. */
   place(anchor: CardAnchor): void;
   hide(): void;
+  /**
+   * Whether a point, in container pixels, is over the card as last placed. The card
+   * is see-through to pointer events, so the canvas cannot tell on its own that the
+   * pointer has moved onto it - this is how it knows not to close the card. Reads
+   * the stored placement, never the DOM.
+   */
+  contains(x: number, y: number): boolean;
 }
 
 /**
@@ -149,6 +156,13 @@ export function NodeHoverCard({
   const element = useRef<HTMLDivElement>(null);
   const size = useRef({ width: 0, height: 0 });
   const anchor = useRef<CardAnchor | null>(null);
+  /** Where the card is drawn, in container pixels, or `null` while not visible. */
+  const placed = useRef<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
   // Measured once per content change, never per frame: a layout read in the render
   // loop is the one thing this scene's update pass is careful not to do (§9.3).
@@ -186,9 +200,11 @@ export function NodeHoverCard({
     // hidden until then, so it never flashes in the wrong place.
     if (width === 0 || height === 0) {
       node.style.visibility = "hidden";
+      placed.current = null;
       return;
     }
     const placement = cardPlacement(next, width, height);
+    placed.current = { x: placement.x, y: placement.y, width, height };
     node.style.transform = `translate3d(${placement.x}px, ${placement.y}px, 0)`;
     node.style.visibility = "visible";
   }
@@ -208,8 +224,19 @@ export function NodeHoverCard({
     place(next) {
       applyPlacement(next);
     },
+    contains(x, y) {
+      const rect = placed.current;
+      return (
+        rect !== null &&
+        x >= rect.x &&
+        x <= rect.x + rect.width &&
+        y >= rect.y &&
+        y <= rect.y + rect.height
+      );
+    },
     hide() {
       anchor.current = null;
+      placed.current = null;
       size.current = { width: 0, height: 0 };
       setContent(null);
     },
