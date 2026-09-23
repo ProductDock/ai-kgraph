@@ -1,0 +1,6 @@
+intent: intent/node-content-pages/intent.md
+generated_at: 2026-09-23T07:14:50Z
+model: claude-sonnet-5
+workflow_run: https://github.com/ProductDock/ai-kgraph/actions/runs/35829624644
+repo_sha: 1d1e334673f57870229ea8af518ddd467203450d
+skills_sha: b019982ed4219d9626f66e54afe75eb11e082cb8
