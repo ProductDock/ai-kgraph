@@ -207,25 +207,30 @@ const DIM_OUT_MS = 420;
 /** How far a dimmed mark travels toward the backdrop; 1 would erase it entirely. */
 const DIM_STRENGTH = 0.8;
 /**
- * The dashes that march out to the children. Measured *along the edge as a
- * fraction of its own length*, not in world units: the ring spans are an order of
- * magnitude longer than a leaf link, so a world-unit dash gives a top-level edge
- * thirty dashes and a leaf edge one and a half. In fractional units every edge
- * shows the same `DASH_COUNT` dashes, whatever its length, and they all travel at
- * the same apparent speed.
+ * The dashes that march out to the children, measured in world units *along the
+ * arc*. They used to be fractions of each edge's own length, which gave every edge
+ * the same dash count but also made each edge its own speed: one edge per beat
+ * whatever its length, so the dot riding them jumped speed at every child it
+ * passed through - measured, edges run 7.2 to 12 units, a change of up to a
+ * third at a junction, and it read as the animation catching. In world units the
+ * trail is one even flow and the dash density is the same everywhere. The range
+ * is narrow enough that the shortest edge still carries about thirteen dashes.
  */
-const DASH_COUNT = 16;
+const DASH_PERIOD = 0.55;
 /** Of each dash-plus-gap period, how much is drawn. */
 const DASH_DUTY = 0.3;
-/** How long one dash takes to travel the whole edge, parent to child. */
-const DASH_TRAVEL_MS = 900;
+/**
+ * How fast the flow runs, in world units per millisecond - dashes and dot alike.
+ * About one typical edge every 900ms, which is the beat the per-edge timing had.
+ */
+const FLOW_SPEED = 9 / 1000;
 /** Dashes fade in and out rather than appearing mid-edge. */
 const DASH_FADE_MS = 200;
 /**
  * The travelling dot. One leaves the clicked node per path and runs outward to a
- * leaf, and it moves at exactly the dashes' rate - one edge per DASH_TRAVEL_MS - so
- * it reads as the head of the flow the dashes are the trail of, rather than as a
- * second animation at its own speed.
+ * leaf, and it moves at exactly the dashes' speed - `FLOW_SPEED`, measured along
+ * the same arc length - so it reads as the head of the flow the dashes are the
+ * trail of, rather than as a second animation at its own speed.
  *
  * Paths that share their first edge carry a dot each, exactly in phase, so they
  * overlap into one dot that visibly *splits* at the child and runs on to each
@@ -244,15 +249,29 @@ const DOT_RADIUS = 0.18;
  */
 const FLOW_WIDTH_PX = 1.9;
 /**
- * While the dashes are the *only* thing moving, frames are paced by a timer at this
- * interval rather than requested back-to-back. The scene renders on demand (R-11)
- * and a held emphasis is the one animation with no end of its own, so it would
- * otherwise be a 60fps loop running for as long as a node stays focused - on a page
- * nobody is touching. A dash flow reads the same at 30, and this halves the cost of
- * standing still. Anything else that moves - the camera, damping, a hover - takes
- * the normal path and is not paced by it.
+ * While the dashes are the *only* thing moving, frames are capped at this interval
+ * rather than drawn on every display refresh. The scene renders on demand (R-11)
+ * and a held emphasis is the one animation with no end of its own, so uncapped it
+ * would be a 120 or 144fps loop on a high-refresh screen for as long as a node
+ * stays focused - on a page nobody is touching.
+ *
+ * The cap is 60, not the 30 it used to be, and it is kept on refresh boundaries
+ * (`paceEmphasisFrame`) rather than by a timer. Both halves were visible: the
+ * camera flies to the node at full rate and the flow then dropped to 30, so the
+ * scene visibly got choppier the moment it landed; and a 33ms timer against a
+ * 16.7ms refresh lands frames 33 and 50ms apart in turn, which a dot moving at a
+ * constant speed shows as a stutter. Anything else that moves - the camera,
+ * damping, a hover - takes the normal path and is not capped by it.
  */
-const EMPHASIS_FRAME_MS = 1000 / 30;
+const EMPHASIS_FRAME_MS = 1000 / 60;
+/**
+ * How early a refresh may land and still count as due. Without it, jitter of a
+ * fraction of a millisecond makes a 60Hz screen miss every other refresh - the
+ * 30fps the cap exists to get away from. Sized to sit between the two cases it
+ * has to tell apart: a 60Hz refresh (16.7ms, due) and a 120Hz one (8.3ms, not),
+ * with a couple of milliseconds of jitter either side.
+ */
+const EMPHASIS_FRAME_SLACK_MS = 6;
 /** Enough movement between press and release to have been an orbit, not a click. */
 const CLICK_SLOP_PX = 5;
 /**
@@ -462,6 +481,16 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      * and cannot be read back at a `t` that falls between two of them.
      */
     const edgeArcs = new Float32Array(edges.length * 9);
+    /**
+     * How far along its arc each of an edge's EDGE_SEGMENTS + 1 samples sits, in
+     * world units; the last is the arc's whole length. What lets the flow move at
+     * one speed in the world rather than one edge per beat, and lets the dot be
+     * placed by distance rather than by `t` - which a quadratic does not advance
+     * evenly.
+     */
+    const edgeArcDistances = new Float32Array(
+      edges.length * (EDGE_SEGMENTS + 1),
+    );
     edges.forEach((edge, index) => {
       edgeFrom.fromArray(nodes[indexById.get(edge.sourceId)!]!.position);
       edgeTo.fromArray(nodes[indexById.get(edge.targetId)!]!.position);
@@ -489,11 +518,15 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       edgeArcs.set(edgeTo.toArray(), index * 9 + 6);
 
       const base = index * EDGE_SEGMENTS * 6;
+      const arcBase = index * (EDGE_SEGMENTS + 1);
+      let along = 0;
       arcPoint(edgeHere, 0);
       for (let step = 0; step < EDGE_SEGMENTS; step += 1) {
         arcPoint(edgeThere, (step + 1) / EDGE_SEGMENTS);
         edgeVertices.set(edgeHere.toArray(), base + step * 6);
         edgeVertices.set(edgeThere.toArray(), base + step * 6 + 3);
+        along += edgeHere.distanceTo(edgeThere);
+        edgeArcDistances[arcBase + step + 1] = along;
         edgeHere.copy(edgeThere);
       }
     });
@@ -604,17 +637,18 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     // ---- focus emphasis: dashes marching out to the children -------------------
     /** The edges hanging *off* each node; `sourceId` is always the parent. */
     const childEdges = new Map<string, number[]>();
+    /** The one edge each node hangs *from*, keyed by the child's id. */
+    const parentEdgeOf = new Map<string, number>();
     edges.forEach((edge, index) => {
       const hanging = childEdges.get(edge.sourceId);
       if (hanging) hanging.push(index);
       else childEdges.set(edge.sourceId, [index]);
+      parentEdgeOf.set(edge.targetId, index);
     });
 
-    /** Where each vertex of an edge sits along its arc, 0 at the parent end. */
-    const edgeVertexT = new Float32Array(EDGE_VERTICES);
-    for (let step = 0; step < EDGE_SEGMENTS; step += 1) {
-      edgeVertexT[step * 2] = step / EDGE_SEGMENTS;
-      edgeVertexT[step * 2 + 1] = (step + 1) / EDGE_SEGMENTS;
+    /** Edge `index`'s whole arc length, in world units. */
+    function arcLength(index: number): number {
+      return edgeArcDistances[index * (EDGE_SEGMENTS + 1) + EDGE_SEGMENTS]!;
     }
 
     /**
@@ -643,7 +677,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      * click, so clicking never allocates a buffer or touches the GPU's allocator.
      */
     /** Every edge the emphasis would light for a given node, nearest level first. */
-    function litEdgesFor(node: GraphSceneNode): { edge: number; level: number }[] {
+    function litEdgesFor(
+      node: GraphSceneNode,
+    ): { edge: number; level: number }[] {
       const hanging = childEdges.get(node.id) ?? [];
       const lit = hanging.map((edge) => ({ edge, level: 0 }));
       // The hub is the exception (and the only node where it matters): two levels
@@ -685,8 +721,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       "instanceEnd",
       new InterleavedBufferAttribute(flowPositionBuffer, 3, 3),
     );
-    // Not `computeLineDistances()`: that measures world length, and the dash
-    // pattern is deliberately in fractions of an edge.
+    // Not `computeLineDistances()`: that runs one tally through every segment in
+    // the buffer, so each edge would start where the previous one in the buffer
+    // ended. The flow measures from the clicked node instead (`fillFlow`).
     const flowDistanceBuffer = new InstancedInterleavedBuffer(
       flowDistanceData,
       2,
@@ -708,8 +745,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       opacity: 0,
       dashed: true,
       linewidth: FLOW_WIDTH_PX,
-      dashSize: DASH_DUTY / DASH_COUNT,
-      gapSize: (1 - DASH_DUTY) / DASH_COUNT,
+      dashSize: DASH_DUTY * DASH_PERIOD,
+      gapSize: (1 - DASH_DUTY) * DASH_PERIOD,
       // The distances are already in the units the pattern is written in.
       dashScale: 1,
     });
@@ -767,6 +804,28 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         .multiplyScalar(inverse * inverse)
         .addScaledVector(dotControl, 2 * inverse * t)
         .addScaledVector(dotTo, t * t);
+    }
+
+    /**
+     * The point `distance` world units along edge `index`'s arc. Inverts the stored
+     * sample distances and interpolates within the segment it falls in; a plain
+     * `t = distance / length` would run the dot slightly faster through the middle
+     * of the bow than at its ends.
+     */
+    function arcAtDistance(out: Vector3, index: number, distance: number) {
+      const base = index * (EDGE_SEGMENTS + 1);
+      let step = 0;
+      while (
+        step < EDGE_SEGMENTS - 1 &&
+        edgeArcDistances[base + step + 1]! < distance
+      ) {
+        step += 1;
+      }
+      const from = edgeArcDistances[base + step]!;
+      const span = edgeArcDistances[base + step + 1]! - from;
+      const within =
+        span > 0 ? Math.min(1, Math.max(0, (distance - from) / span)) : 0;
+      return arcAt(out, index, (step + within) / EDGE_SEGMENTS);
     }
 
     type Emphasis = {
@@ -844,17 +903,23 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
           to,
         );
 
-        for (let vertex = 0; vertex < EDGE_VERTICES; vertex += 1) {
-          // Written per click, not per frame: the march is a uniform on the
-          // material now, and this is the fixed part it is added to.
-          //
-          // Adding `level` is what makes the two levels one continuous run: a
-          // second-level slot sits a whole edge-length further along the pattern,
-          // so a dash appears to leave the clicked node, reach a child and carry
-          // on past it, rather than two rings of dashes starting at once. It only
-          // lines up because a level is 1 and the pattern's period divides 1.
-          flowDistanceData[slot * EDGE_VERTICES + vertex] =
-            level + edgeVertexT[vertex]!;
+        // Written per click, not per frame: the march is a uniform on the material,
+        // and this is the fixed part it is added to.
+        //
+        // Starting a second-level edge at the length of the edge above it is what
+        // makes the two levels one continuous run: every vertex is its distance
+        // from the clicked node, so a dash appears to leave it, reach a child and
+        // carry on past it, rather than two rings of dashes starting at once.
+        const start =
+          level === 0
+            ? 0
+            : arcLength(parentEdgeOf.get(edges[edgeIndex]!.sourceId)!);
+        const arcBase = edgeIndex * (EDGE_SEGMENTS + 1);
+        for (let step = 0; step < EDGE_SEGMENTS; step += 1) {
+          const vertex = slot * EDGE_VERTICES + step * 2;
+          flowDistanceData[vertex] = start + edgeArcDistances[arcBase + step]!;
+          flowDistanceData[vertex + 1] =
+            start + edgeArcDistances[arcBase + step + 1]!;
         }
       });
 
@@ -870,7 +935,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         if (level !== 0) continue;
         const onward = hanging.filter(
           (next) =>
-            next.level === 1 && edges[next.edge]!.sourceId === edges[edge]!.targetId,
+            next.level === 1 &&
+            edges[next.edge]!.sourceId === edges[edge]!.targetId,
         );
         if (onward.length === 0) {
           dotPaths[paths * 2] = edge;
@@ -891,22 +957,24 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     /**
-     * Moves the dots. `elapsed / DASH_TRAVEL_MS` is a position in edges travelled -
-     * the same clock the dash offset runs on - wrapped by each path's own length, so
-     * a dot that has two edges to cover takes two beats to come round again and the
+     * Moves the dots. `elapsed * FLOW_SPEED` is a distance travelled in world units
+     * - the same clock the dash offset runs on - wrapped by each path's own arc
+     * length, so a dot with further to go takes longer to come round again and the
      * long paths drift out of step with the short ones on their own.
      */
     function stepDots(elapsed: number, fade: number) {
       if (dotCount === 0) return;
-      const travelled = elapsed / DASH_TRAVEL_MS;
+      const travelled = elapsed * FLOW_SPEED;
 
       for (let path = 0; path < dotCount; path += 1) {
         const first = dotPaths[path * 2]!;
         const second = dotPaths[path * 2 + 1]!;
-        const legs = second < 0 ? 1 : 2;
-        const along = travelled % legs;
-        const leg = along < 1 ? first : second;
-        arcAt(dotPoint, leg, along < 1 ? along : along - 1);
+        const firstLength = arcLength(first);
+        const total = firstLength + (second < 0 ? 0 : arcLength(second));
+        const along = total > 0 ? travelled % total : 0;
+        const onFirst = second < 0 || along < firstLength;
+        const leg = onFirst ? first : second;
+        arcAtDistance(dotPoint, leg, onFirst ? along : along - firstLength);
 
         dummy.position.copy(dotPoint);
         dummy.scale.setScalar(1);
@@ -942,8 +1010,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       // dash-plus-gap period: the pattern is identical either way, and an emphasis
       // held for an hour would otherwise hand the shader a float of four thousand
       // and ask it for a fraction of it.
-      const period = 1 / DASH_COUNT;
-      flowMaterial.dashOffset = -((elapsed / DASH_TRAVEL_MS) % period);
+      flowMaterial.dashOffset = -((elapsed * FLOW_SPEED) % DASH_PERIOD);
       flowMaterial.opacity = fade;
     }
 
@@ -1127,17 +1194,29 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
 
     /**
      * The one animation allowed to schedule from inside a frame, and only because
-     * it does not do it directly: it asks for the next frame on a timer, which
-     * lands outside this one. Everything else goes through the block at the end of
-     * `renderFrame`.
+     * it does not do it directly: it waits on display refreshes, which land outside
+     * this one, and draws on the first that is due. Everything else goes through
+     * the block at the end of `renderFrame`.
+     *
+     * It draws from inside the refresh callback rather than calling `invalidate()`
+     * there, because `invalidate()` would ask for yet another refresh and the frame
+     * would land one late every time - on a 60Hz screen, every other refresh.
      */
-    let emphasisTimer: ReturnType<typeof setTimeout> | null = null;
+    let emphasisPace = 0;
     function paceEmphasisFrame() {
-      if (emphasisTimer !== null) return;
-      emphasisTimer = setTimeout(() => {
-        emphasisTimer = null;
-        invalidate();
-      }, EMPHASIS_FRAME_MS);
+      if (emphasisPace) return;
+      const tick = (now: number) => {
+        emphasisPace = 0;
+        // A frame is already on its way - something else invalidated - and it
+        // re-paces when it has drawn.
+        if (disposed || frame) return;
+        if (now - lastFrameAt < EMPHASIS_FRAME_MS - EMPHASIS_FRAME_SLACK_MS) {
+          emphasisPace = requestAnimationFrame(tick);
+          return;
+        }
+        renderFrame(now);
+      };
+      emphasisPace = requestAnimationFrame(tick);
     }
 
     function stepScales(deltaMs: number): boolean {
@@ -1816,7 +1895,11 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       // space - and would close the card as it is being read, or swap it for a node
       // drawn behind it. The card wins until the pointer leaves it. A press still
       // goes straight through to the canvas and orbits (FR-4).
-      if (event.pointerType !== "touch" && pressedAt === null && overCard(event)) {
+      if (
+        event.pointerType !== "touch" &&
+        pressedAt === null &&
+        overCard(event)
+      ) {
         cancelScheduledClose();
         // Not a node index: it only guarantees the next move off the card differs
         // from this one, so the cursor is set again when the pointer leaves.
@@ -2047,7 +2130,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     return () => {
       disposed = true;
       if (frame) cancelAnimationFrame(frame);
-      if (emphasisTimer !== null) clearTimeout(emphasisTimer);
+      if (emphasisPace) cancelAnimationFrame(emphasisPace);
       if (longPressTimer !== null) clearTimeout(longPressTimer);
       if (cardCloseTimer !== null) clearTimeout(cardCloseTimer);
       invalidateRef.current = null;
