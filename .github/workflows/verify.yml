@@ -13,15 +13,23 @@ on:
   pull_request:
     # Documents-only PRs have no code to lint, typecheck, test or build. The main
     # source of these is the spec PR that spec-from-intent.yml opens, which touches
-    # only intent/<slug>/*. paths-ignore skips a PR only when *every* changed file
-    # matches, so a PR mixing a spec and real code still runs the full suite.
+    # only intent/<slug>/*. The workflow runs when *any* changed file matches the
+    # list below, so a PR mixing a spec and real code still runs the full suite.
+    #
+    # `content/**` is re-included last, and the order is what makes it work: a later
+    # positive pattern overrides an earlier `!`. Topic pages are markdown, but the
+    # build validates them against seed.ts, so a content-only PR is exactly the one
+    # that must run it - under a plain `**.md` ignore, a page for a renamed topic
+    # would pass review unchecked and fail the build on main.
     #
     # A skipped workflow reports no check at all, so verify must not become a
     # required status check on main without a companion no-op job to report for it.
-    paths-ignore:
-      - 'intent/**'
-      - 'docs/**'
-      - '**.md'
+    paths:
+      - '**'
+      - '!intent/**'
+      - '!docs/**'
+      - '!**.md'
+      - 'content/**'
 
 permissions:
   contents: read

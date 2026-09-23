@@ -180,6 +180,15 @@ changes no file in it.
   `app/loading.tsx` wraps every route in Suspense, so the response has already started
   streaming and Next can only mark it `noindex`, not change the status. Measured: with no
   loading boundary anywhere it is a 404. Known pages are unaffected — all still prerender.
+- **Editing topics and pages is a skill, not a code task:** `.claude/skills/graph-topic/`
+  walks anyone through `seed.ts` and `content/`, including renames that move files, and
+  opens a PR. Keep it in step when a rule below changes. **Tests never pin the live tree
+  or its pages.** Anything needing exact names, owners or bodies runs against
+  `src/lib/graph/__fixtures__/` (a frozen seed and `content/`). Tests over the live files
+  (`page.live.test.tsx`, the live-tree cases in `content.test.ts`, `tree.test.ts`, and the
+  real-seed layout and colour checks) assert only what holds for any content. A test
+  that has to change whenever someone writes a page is a bug in the test. Content-only
+  PRs run `verify.yml` too: `content/**` is re-included after the `**.md` ignore.
 - Node ids are the slugified name path (`pd-ai/ai-agents/workflows/n8n`), so **sibling
   names must be unique**. A duplicate fails the build. The path includes the root, so
   **renaming the root moves every id in the tree** — that is a find-and-replace across

@@ -10,6 +10,7 @@ course, plus a working implementation of the Plan → Design → Build handoffs.
 | [`docs/plan-handoff.md`](docs/plan-handoff.md) | Why `plan.md` is *not* generated, and what is automated at that gate instead |
 | [`.claude/skills/write-intent/`](.claude/skills/write-intent/SKILL.md) | Skill: interview an originator and open a PR with `intent/<slug>/intent.md` |
 | [`.claude/skills/plan-from-spec/`](.claude/skills/plan-from-spec/SKILL.md) | Skill: plan-mode session from an approved spec, interrogated, committed as `plan.md` |
+| [`.claude/skills/graph-topic/`](.claude/skills/graph-topic/SKILL.md) | Skill: add, claim, rename or remove a graph topic, or write its page — edits `seed.ts` and `content/`, checks it, opens a PR |
 | [`.github/workflows/spec-from-intent.yml`](.github/workflows/spec-from-intent.yml) | On an approved `intent.md` reaching `main`, generates `spec.md` and opens a PR |
 | [`.github/workflows/plan-ready.yml`](.github/workflows/plan-ready.yml) | On an approved `spec.md` reaching `main`, opens a `plan: <slug>` task for an engineer |
 | [`intent/`](intent/) | Where each change's `intent.md`, `spec.md` and `plan.md` live |
