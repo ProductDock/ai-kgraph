@@ -165,13 +165,22 @@
     --graph-branch-5: #d95926; /* orange */
     --graph-branch-6: #9085e9; /* violet */
     --graph-branch-7: #e66767; /* red */
-    --graph-edge: #2a2f35;
-    --graph-floor: #252c34;
-    --graph-shadow: #0d1116;
+    /* Lifted from #2a2f35 / #252c34 / #0d1116, where the floor measured 1.23:1
+       against the backdrop and read as no grid at all. The ceiling on this ramp
+       is the quietest node - green at its shaded terminator, 2.52:1 on the new
+       backdrop - so the edge (2.25:1) and floor (1.70:1) sit under it with room
+       for a step, not at it. */
+    --graph-edge: #515c6b;
+    --graph-floor: #3f4a59;
+    --graph-shadow: #131820;
     /* Inverted against light on purpose: the page is already near-black, so
-       darkening the edges buys no depth. The light sits behind the hub. */
-    --graph-space-near: #151b22;
-    --graph-space-far: #05070a;
+       darkening the edges buys no depth. The light sits behind the hub.
+       Lifted from #151b22 / #05070a, which read as a black hole. The bound is
+       green (#008300), the darkest hue: 3.09:1 against the near end, where 3:1
+       is the floor that keeps dark mode free of the label relief light needs.
+       Going lighter than this means re-valuing green first. */
+    --graph-space-near: #1e2630;
+    --graph-space-far: #0d1218;
   }
 }
 
@@ -197,11 +206,11 @@
   --graph-branch-5: #d95926; /* orange */
   --graph-branch-6: #9085e9; /* violet */
   --graph-branch-7: #e66767; /* red */
-  --graph-edge: #2a2f35;
-  --graph-floor: #252c34;
-  --graph-shadow: #0d1116;
-  --graph-space-near: #151b22;
-  --graph-space-far: #05070a;
+  --graph-edge: #515c6b;
+  --graph-floor: #3f4a59;
+  --graph-shadow: #131820;
+  --graph-space-near: #1e2630;
+  --graph-space-far: #0d1218;
 }
 
 /* Bridges the role-named tokens above onto the semantic names the vendored

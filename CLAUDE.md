@@ -257,6 +257,28 @@ changes no file in it.
   is stateless, so its on/off churn is smoothed by a `LABEL_FADE_MS` opacity transition
   rather than by hysteresis; a span that changes hands is pinned at zero and faded up, or
   it would cross-fade one node's name into another's.
+- **Pressing a node and dragging moves the node, not the camera** (`spring.ts`).
+  Orbit starts from empty space or the hub — the hub is deliberately not draggable,
+  so there is always a large handle for turning the graph. The press is claimed by a
+  **capture-phase** `pointerdown` that disables `OrbitControls` before its own
+  listener sees it; a press that never passes `CLICK_SLOP_PX` is still a click or a
+  long-press. A drag only ever moves a per-node _offset_ from the layout position,
+  and every offset springs back to zero on release, so the layout stays the resting
+  state and `layout.test.ts` still describes it. The branch below follows through
+  springs at `DRAG_FOLLOW` per generation; the pull is rubber-banded to
+  `DRAG_REACH`. Anything that draws at a node's position must read
+  `livePosition()`, not `node.position`, or it is left behind mid-drag. Reduced
+  motion keeps the drag and drops the overshoot.
+- **The focus glow is sprites, not a post-processing pass.** A bloom pass would
+  move node pixels off the values `palette.contract.test.ts` validates, and the
+  canvas is transparent over a CSS backdrop. The halos are a new mark around the
+  focused node, its children and its parent, and they are **not** covered by the
+  contract. There is no vignette: `.graph-space` already is one, and its dark end is
+  already as dark as the node contrast floor allows.
+- **The dark backdrop is bounded by green.** `#008300` is the darkest hue, at
+  3.09:1 against `--graph-space-near`; any lighter backdrop pushes it under 3:1 and
+  into the label relief only light mode needs. The dark floor and edges are bounded
+  by green's shaded terminator (2.52:1). Both limits are in `globals.css`.
 - **Single click is still spent on camera focus.** The node card that was deferred to
   double-click is built instead on **idle hover on desktop and long-press on tablet**
   (`node-hover-card.tsx`), so click-to-focus is untouched. *Idle* hover is the narrow
