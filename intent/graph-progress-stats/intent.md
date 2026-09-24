@@ -23,21 +23,24 @@ Done   6/41 (15%)
 ```
 
 The mockup shows what goes in the panel and where it sits. It is not a finished visual
-design.
+design, and some of its content has since been decided differently (see below).
 
 ## Proposed outcome
 
 - Anyone who opens the graph sees a statistics panel in the **top right corner**
-  showing how many topics are on the graph, how many connections they have, how many
-  are **Done** and how many are **In Progress**, and the share that is Done, with a
-  progress bar.
-- The numbers only count the **topics people actually work on**. The central hub is
-  left out, so 100% can actually be reached. (What else counts as "workable" is below
-  under Open questions.)
+  showing how many topics are on the graph, how many are **Done** and how many are
+  **In Progress**, and the share that is Done, with a progress bar.
+- **Every topic except the central hub counts.** That includes the ring topics and
+  group topics (ones with children); they can be marked Done like any other topic.
+  Leaving out the hub means 100% can actually be reached.
+- **No "Edges" row.** It was in the mockup, but it says nothing about progress.
+- **In Progress gets its own row and its own segment in the bar**: a second, lighter
+  segment next to Done. There is no separate Todo row.
 - The numbers always describe **the whole graph**. They do not change when you click,
   focus or hover a topic.
-- The panel is visible by default and **can be collapsed** by the viewer so it gets
-  out of the way of the 3D view.
+- The panel **starts open** on every device and **can be collapsed** by the viewer so
+  it gets out of the way of the 3D view. If someone collapses it, it **stays collapsed
+  for them the next time they visit**.
 - When someone's topic is marked Done and that change is merged, the panel's numbers
   go up to match `[assumed]`.
 
@@ -56,20 +59,13 @@ design.
 - It must **work on tablet** as well as desktop: it has to fit and read well there.
 - How it looks follows the existing design system. The mockup's colours and styling are
   not a requirement.
+- **Something else is already planned for the top right corner.** The stats panel has
+  to **stack** with it in that corner, not take it over or move to another corner.
+- **Screen reader and keyboard access is not required.** The panel is visual only and
+  is treated like the 3D scene: known, recorded accessibility debt, not held to the
+  WCAG 2.2 AA bar the rest of the page meets.
 
 ## Open questions
 
-- [ ] Beyond the hub, what counts as a "workable" topic? Should the four ring topics
-      and other group topics (ones with children) count, or only the topics at the
-      end of a branch? — *owner:* Nemanja / product owner
-- [ ] With the hub left out, what should "Edges" count? All connections, or only
-      connections between counted topics? Is Edges worth showing at all, or is it
-      just filler from the mockup? — *owner:* Nemanja
-- [ ] How should In Progress be shown: its own row, a second segment in the bar, or
-      both? Should Todo be shown too? — *owner:* Nemanja / design
-- [ ] Should the panel stay collapsed for someone who collapsed it the next time they
-      come back? Should it start collapsed on tablet? — *owner:* Nemanja
-- [ ] Does the panel need to be readable by screen readers and reachable by keyboard,
-      like the rest of the page around the graph? — *owner:* product owner
-- [ ] Is anything else already planned for the top right corner that this would
-      fight with? — *owner:* product owner
+- [ ] What is the other thing planned for the top right corner? Its size and whether
+      it collapses affect how the two stack. — *owner:* product owner
