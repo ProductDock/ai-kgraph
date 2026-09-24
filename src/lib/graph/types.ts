@@ -99,6 +99,17 @@ export interface GraphSceneNode
 }
 
 /**
+ * How far along the graph is, as counts of topics - every node but the hub, which
+ * cannot carry a status (graph-progress-stats spec). Counts only: percentages are
+ * the panel's to derive, so the payload never carries a rounded number.
+ */
+export interface GraphStats {
+  totalTopics: number;
+  done: number;
+  inProgress: number;
+}
+
+/**
  * The prop payload the Server Component hands the client (spec §7.6): positions,
  * not an algorithm.
  */
@@ -108,4 +119,6 @@ export interface GraphScene {
   /** Distance to the outermost shell, so the client frames the scene without
       re-deriving the layout's constants. */
   radius: number;
+  /** Progress counts, computed at build time from the same statuses the card reads. */
+  stats: GraphStats;
 }

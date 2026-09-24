@@ -54,8 +54,10 @@ Unchanged: `schema.ts`, `seed.ts`, `content.ts`, `tree.ts`, `layout.ts`, `colour
   - **The track is `bg-border`, not `bg-muted`.** §9.3 says "muted/border token", but
     `--color-muted` and `--color-card` both resolve to `--surface-1`, so a `bg-muted` track
     would be invisible on the card. `--border` is the hairline token §9.3 means.
-  - `/40` is a starting value, to be tuned by eye in both themes (D-6). Whatever value
-    ships goes back into this file.
+  - **Ships at `bg-primary/50`** (D-6, tuned by eye). `/40` separates cleanly in light,
+    but in dark the In Progress segment sits too close to the `bg-border` track. `/50` is
+    the lowest value at which Done, In Progress and the track are three distinct bands in
+    both themes; `/60` gained nothing further in light.
 - **Rounding:** each percentage is `Math.round(count / total * 100)` on its own, so the
   two can add up to 101. Bar widths use the unrounded fractions.
 - No animation on the bar or the collapse, so there's nothing to add to the
@@ -71,6 +73,19 @@ Unchanged: `schema.ts`, `seed.ts`, `content.ts`, `tree.ts`, `layout.ts`, `colour
 > pointer events in its own rectangle, paints above the hover card, and is `aria-hidden`
 > like the scene. Its collapsed flag is in `useGraphStatsStore` and remembered per browser.
 > Its bar track is `bg-border` because `bg-muted` is the card's own colour.
+
+### Deviations from the above, made during implementation
+
+- `scene.ts` names the built array `sceneNodes`, not `nodes`: `nodes` is already the
+  flattened array from `flatten()`, which `layout`, `assignColours` and `sceneRadius`
+  still read.
+- V-3's `statsShares` half lives in `graph-stats-panel.test.tsx`, beside the function,
+  rather than in `stats.test.ts`, so a `lib/` test does not import from `app/`. The panel
+  test also holds a rounding case (101 + 99 of 200 → 51% + 50%) and asserts the
+  `aria-hidden` / `tabIndex={-1}` posture.
+- Rebased onto `c5bd766` (#61), which added node drag-with-spring-back. That drag holds
+  `setPointerCapture` on the canvas, the same as `OrbitControls`, so the Risks section's
+  pointer-handoff assumption covers it too; V-12 also drags a node across the panel.
 
 ## Sequence of work
 

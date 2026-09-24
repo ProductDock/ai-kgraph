@@ -307,6 +307,15 @@ changes no file in it.
   alone — no rows, no link. Opening one forces the label pass open (`lastLabelsAt = 0`) as well as calling
   `invalidate()`: the throttle would otherwise swallow the one frame the card had to be
   placed in, and it would sit unplaced for good.
+- **The stats panel counts topics, not nodes** (`intent/graph-progress-stats/`).
+  `computeGraphStats()` runs inside `buildScene()` and excludes the hub
+  (`parentId === null`): the hub can't carry a status (`content/index.md` fails the
+  build), so counting it would keep 100% out of reach. A group marked Done counts as Done
+  whatever is under it (C-3). The numbers are as fresh as the last deploy (C-2). The panel
+  is ordinary DOM that takes pointer events in its own rectangle, paints above the hover
+  card, and is `aria-hidden` like the scene. Its collapsed flag is in `useGraphStatsStore`
+  and remembered per browser. Its bar track is `bg-border` because `bg-muted` is the
+  card's own colour.
 - **Arriving at `/graph` is one of three openings, in this order: restore, focus, intro.**
   A view saved when "Open page" was clicked is restored **only** when `/graph` is re-entered
   by Back/Forward (`stores/graph-view-store.ts`), so "Back to AI Learning Graph" — a link —
