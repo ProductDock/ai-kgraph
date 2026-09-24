@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AmbientLight,
+  BufferAttribute,
   BufferGeometry,
   CircleGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
   Float32BufferAttribute,
   Fog,
@@ -15,12 +17,16 @@ import {
   LineBasicMaterial,
   LineSegments,
   MeshBasicMaterial,
-  MeshLambertMaterial,
+  MeshPhongMaterial,
   Object3D,
   PerspectiveCamera,
+  Plane,
   Raycaster,
   Scene,
+  Sphere,
   SphereGeometry,
+  Sprite,
+  SpriteMaterial,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -53,6 +59,11 @@ import {
   type CardAnchor,
   type NodeHoverCardHandle,
 } from "./node-hover-card";
+import {
+  createSpringField,
+  rubberBand,
+  stepSpring,
+} from "./spring";
 import { createTween, prefersReducedMotion, tweenDuration } from "./tween";
 import { UnsupportedNotice } from "./unsupported-notice";
 
@@ -163,6 +174,22 @@ const KEY = 1 - AMBIENT;
  * comment above says it means.
  */
 const LAMBERT_PI = Math.PI;
+/**
+ * What makes a node read as a ball rather than a shaded disc: a soft highlight
+ * where the key light glints toward the camera, and a rim that darkens toward the
+ * silhouette. The 24% of shading `NODE_TERMINATOR` allows is not enough on its own.
+ *
+ * Both are marks *outside* the palette contract, taken knowingly, like the focus
+ * glow: the body of every node is still drawn exactly as calibrated above (Phong's
+ * diffuse term is the same Lambert BRDF), and the highlight and rim cover a small
+ * band at its centre and edge. `palette.contract.test.ts` does not cover them.
+ */
+const SPECULAR = 0x8c8c8c;
+const SHININESS = 28;
+/** How dark the very edge of a node is, as a fraction of its lit colour. */
+const RIM_FLOOR = 0.62;
+/** How tightly the rim hugs the silhouette; higher is a thinner band. */
+const RIM_POWER = 2.4;
 /** Nudges the key off the view axis, so the terminator is never a concentric ring. */
 const KEY_OFFSET = new Vector3(-0.35, 0, 0.2);
 
@@ -272,6 +299,34 @@ const EMPHASIS_FRAME_MS = 1000 / 60;
  * with a couple of milliseconds of jitter either side.
  */
 const EMPHASIS_FRAME_SLACK_MS = 6;
+/**
+ * The focus glow: a soft halo in each node's own colour, behind the clicked node,
+ * its children and the node it hangs off. Drawn as camera-facing sprites in the
+ * scene rather than as a bloom pass, for two reasons that are both about the
+ * palette. A bloom pass brightens every pixel over a threshold, so it moves the
+ * *nodes'* colours off the values `palette.contract.test.ts` validated; a halo
+ * only adds a new mark around them and leaves every node pixel alone. And the
+ * canvas is transparent over a CSS backdrop, which a composer's render targets
+ * would have to be taught to preserve.
+ *
+ * `HALO_SPREAD` is the halo's radius as a multiple of the node's drawn radius. The
+ * strengths are peak opacities, strongest on the node you clicked, and the parent
+ * is the faintest because the dim has already sent its body toward the backdrop -
+ * its halo is the one place it keeps its hue, which is the "you came from here".
+ */
+const HALO_SPREAD = 2.1;
+const HALO_FOCUSED = 0.55;
+const HALO_CHILD = 0.3;
+const HALO_PARENT = 0.22;
+/** Texture resolution for the halo's falloff; it is only ever drawn a few dozen pixels wide. */
+const HALO_TEXTURE_SIZE = 64;
+/**
+ * How much of a drag each generation below the dragged node follows. The node
+ * itself tracks the pointer; its children are pulled 70% of the way, their
+ * children 70% of that, all through springs, so a branch trails behind the node
+ * like something with weight rather than moving as one rigid piece.
+ */
+const DRAG_FOLLOW = 0.7;
 /** Enough movement between press and release to have been an orbit, not a click. */
 const CLICK_SLOP_PX = 5;
 /**
@@ -423,12 +478,24 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     world.add(ambientLight, keyLight);
 
     // ---- nodes: one InstancedMesh, one draw call (NFR-2) ----------------------
-    // Lambert, not basic: see AMBIENT/KEY above for why shading this does not move
-    // a node off the value the ramp validator passed (spec §7.4). Lambert rather
-    // than standard because there is no specular highlight to earn here and a
-    // highlight would be a second, uncalibrated colour on every node.
+    // Lit, not basic: see AMBIENT/KEY above for why shading this does not move a
+    // node's body off the value the ramp validator passed (spec §7.4). Phong
+    // rather than Lambert only for the highlight, and the rim is patched in
+    // before fog so a far node's edge fades with the rest of it - see SPECULAR.
     const nodeGeometry = new SphereGeometry(1, 32, 24);
-    const nodeMaterial = new MeshLambertMaterial({ fog: true });
+    const nodeMaterial = new MeshPhongMaterial({
+      fog: true,
+      specular: SPECULAR,
+      shininess: SHININESS,
+    });
+    nodeMaterial.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <opaque_fragment>",
+        `float rimFacing = saturate(dot(normal, normalize(vViewPosition)));
+        outgoingLight *= mix(${RIM_FLOOR.toFixed(3)}, 1.0, 1.0 - pow(1.0 - rimFacing, ${RIM_POWER.toFixed(3)}));
+        #include <opaque_fragment>`,
+      );
+    };
     const nodeMesh = new InstancedMesh(
       nodeGeometry,
       nodeMaterial,
@@ -442,9 +509,29 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     const scaleTargets = new Float32Array(nodes.length).fill(1);
     const animatingScales = new Set<number>();
 
+    /**
+     * How far each node currently sits from its layout position - the drag and the
+     * spring back from it (`spring.ts`). Zero for every node at rest, which is
+     * nearly always, and then everything below draws exactly the layout.
+     */
+    const springs = createSpringField(nodes.length);
+    /** Nodes whose offset is still moving; the only ones a frame rewrites. */
+    const springing = new Set<number>();
+
+    /** Where node `index` is drawn: its layout position plus its spring offset. */
+    function livePosition(index: number, out: Vector3): Vector3 {
+      const node = nodes[index]!;
+      const base = index * 3;
+      return out.set(
+        node.position[0] + springs.offsets[base]!,
+        node.position[1] + springs.offsets[base + 1]!,
+        node.position[2] + springs.offsets[base + 2]!,
+      );
+    }
+
     function writeMatrix(index: number) {
       const node = nodes[index]!;
-      dummy.position.set(...node.position);
+      livePosition(index, dummy.position);
       dummy.scale.setScalar(node.radius * scales[index]!);
       dummy.updateMatrix();
       nodeMesh.setMatrixAt(index, dummy.matrix);
@@ -491,9 +578,31 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     const edgeArcDistances = new Float32Array(
       edges.length * (EDGE_SEGMENTS + 1),
     );
+    /** Each edge's two node indices, parent first. */
+    const edgeEnds = new Int32Array(edges.length * 2);
+    /** Every edge touching a node, so a moved node knows which arcs to rebuild. */
+    const edgesOfNode = new Map<number, number[]>();
     edges.forEach((edge, index) => {
-      edgeFrom.fromArray(nodes[indexById.get(edge.sourceId)!]!.position);
-      edgeTo.fromArray(nodes[indexById.get(edge.targetId)!]!.position);
+      const source = indexById.get(edge.sourceId)!;
+      const target = indexById.get(edge.targetId)!;
+      edgeEnds[index * 2] = source;
+      edgeEnds[index * 2 + 1] = target;
+      for (const end of [source, target]) {
+        const touching = edgesOfNode.get(end);
+        if (touching) touching.push(index);
+        else edgesOfNode.set(end, [index]);
+      }
+    });
+
+    /**
+     * Samples edge `index`'s arc between its two nodes' *live* positions into the
+     * chord buffer, the stored control points and the arc distances. Run for every
+     * edge once at build time and again, per frame, only for the edges of a node a
+     * spring is moving - so a dragged node's links stretch and bow with it.
+     */
+    function buildEdge(index: number) {
+      livePosition(edgeEnds[index * 2]!, edgeFrom);
+      livePosition(edgeEnds[index * 2 + 1]!, edgeTo);
       const length = edgeFrom.distanceTo(edgeTo);
       edgeDirection.subVectors(edgeTo, edgeFrom).normalize();
       // World up, with the part of it that runs along the edge removed: what is
@@ -529,14 +638,17 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         edgeArcDistances[arcBase + step + 1] = along;
         edgeHere.copy(edgeThere);
       }
-    });
+    }
+    for (let index = 0; index < edges.length; index += 1) buildEdge(index);
     const edgeGeometry = new BufferGeometry();
-    edgeGeometry.setAttribute(
-      "position",
-      new Float32BufferAttribute(edgeVertices, 3),
-    );
+    // A plain `BufferAttribute`, not `Float32BufferAttribute`: the latter copies the
+    // array it is handed, and a dragged node rewrites `edgeVertices` in place.
+    const edgePositions = new BufferAttribute(edgeVertices, 3);
+    edgeGeometry.setAttribute("position", edgePositions);
     const edgeMaterial = new LineBasicMaterial({ fog: true });
     const edgeLines = new LineSegments(edgeGeometry, edgeMaterial);
+    // Its bounds are computed once, from the layout; a dragged edge can leave them.
+    edgeLines.frustumCulled = false;
     world.add(edgeLines);
 
     // ---- floor: the depth cue, one more draw call -----------------------------
@@ -585,7 +697,14 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     // and they are what turns the floor from a backdrop into a plane the graph is
     // standing *on*: the height they measure is only visible in perspective.
     const hubNode = nodes.find((node) => node.parentId === null);
-    for (const node of hubNode ? [hubNode, ...ringNodes] : ringNodes) {
+    const stemNodes = hubNode ? [hubNode, ...ringNodes] : ringNodes;
+    /** Where the stems start in the floor buffer, in floats; they are its tail. */
+    const stemsAt = floorVertices.length;
+    /** Node index -> which stem it stands on, for the few nodes that have one. */
+    const stemOf = new Map(
+      stemNodes.map((node, stem) => [indexById.get(node.id)!, stem]),
+    );
+    for (const node of stemNodes) {
       floorVertices.push(
         node.position[0],
         node.position[1],
@@ -597,10 +716,23 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     const floorGeometry = new BufferGeometry();
-    floorGeometry.setAttribute(
-      "position",
-      new Float32BufferAttribute(floorVertices, 3),
-    );
+    const floorPositions = new Float32BufferAttribute(floorVertices, 3);
+    floorGeometry.setAttribute("position", floorPositions);
+
+    /** Moves node `index`'s stem with it; a no-op for a node that has none. */
+    function writeStem(index: number): boolean {
+      const stem = stemOf.get(index);
+      if (stem === undefined) return false;
+      livePosition(index, edgeHere);
+      const at = stemsAt + stem * 6;
+      const data = floorPositions.array;
+      data[at] = edgeHere.x;
+      data[at + 1] = edgeHere.y;
+      data[at + 2] = edgeHere.z;
+      data[at + 3] = edgeHere.x;
+      data[at + 5] = edgeHere.z;
+      return true;
+    }
     const floorMaterial = new LineBasicMaterial({ fog: true });
     const floorLines = new LineSegments(floorGeometry, floorMaterial);
     // The floor is decoration, not content: it must never be what a screen reader
@@ -622,15 +754,18 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       shadowMaterial,
       nodes.length,
     );
-    nodes.forEach((node, index) => {
-      dummy.position.set(node.position[0], floorY, node.position[2]);
+    /** Node `index`'s floor mark, straight under wherever the node is drawn. */
+    function writeShadow(index: number) {
+      livePosition(index, dummy.position).setY(floorY);
       // Wider than the node: a hard disc the size of the sphere reads as a second
       // node lying on the floor rather than as the mark one casts.
-      dummy.scale.setScalar(node.radius * SHADOW_SPREAD);
+      dummy.scale.setScalar(nodes[index]!.radius * SHADOW_SPREAD);
       dummy.updateMatrix();
       shadowMesh.setMatrixAt(index, dummy.matrix);
-    });
+    }
+    nodes.forEach((_, index) => writeShadow(index));
     shadowMesh.instanceMatrix.needsUpdate = true;
+    shadowMesh.frustumCulled = false;
     shadowMesh.renderOrder = -1;
     world.add(shadowMesh);
 
@@ -781,6 +916,65 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     dotMesh.frustumCulled = false;
     world.add(dotMesh);
 
+    // ---- focus glow: a halo behind the clicked node and its family ------------
+    // See HALO_SPREAD for why this is sprites and not a post-processing pass.
+    //
+    // One white falloff texture, tinted per sprite by its material colour. Opaque
+    // inside the node's own silhouette - that part sits behind the sphere and is
+    // depth-tested away, so what shows is only the ring outside it - then easing
+    // to nothing at the sprite's edge. Built from numbers rather than drawn on a
+    // 2D canvas, so it needs no DOM.
+    const haloData = new Uint8Array(HALO_TEXTURE_SIZE * HALO_TEXTURE_SIZE * 4);
+    const haloEdge = 1 / HALO_SPREAD;
+    for (let y = 0; y < HALO_TEXTURE_SIZE; y += 1) {
+      for (let x = 0; x < HALO_TEXTURE_SIZE; x += 1) {
+        const r = Math.hypot(
+          ((x + 0.5) / HALO_TEXTURE_SIZE) * 2 - 1,
+          ((y + 0.5) / HALO_TEXTURE_SIZE) * 2 - 1,
+        );
+        const fall =
+          r >= 1 ? 0 : r <= haloEdge ? 1 : 1 - (r - haloEdge) / (1 - haloEdge);
+        const at = (y * HALO_TEXTURE_SIZE + x) * 4;
+        haloData[at] = 255;
+        haloData[at + 1] = 255;
+        haloData[at + 2] = 255;
+        // Squared, so the glow hugs the node and fades out softly rather than
+        // ending on a visible rim.
+        haloData[at + 3] = Math.round(fall * fall * 255);
+      }
+    }
+    const haloTexture = new DataTexture(
+      haloData,
+      HALO_TEXTURE_SIZE,
+      HALO_TEXTURE_SIZE,
+    );
+    haloTexture.needsUpdate = true;
+
+    /** Enough sprites for the widest family: the node, its parent, its children. */
+    let widestFamily = 1;
+    for (const node of nodes) {
+      widestFamily = Math.max(
+        widestFamily,
+        2 + (childEdges.get(node.id)?.length ?? 0),
+      );
+    }
+    const halos = Array.from({ length: widestFamily }, () => {
+      const sprite = new Sprite(
+        new SpriteMaterial({
+          map: haloTexture,
+          fog: true,
+          transparent: true,
+          depthWrite: false,
+          opacity: 0,
+        }),
+      );
+      sprite.visible = false;
+      // After the nodes, so the depth test has something to hide the centre behind.
+      sprite.renderOrder = 1;
+      world.add(sprite);
+      return sprite;
+    });
+
     /**
      * The paths the dots run, as edge indices: the first edge, then the one it
      * continues into, or -1 where the child is a leaf and the dot stops there.
@@ -840,6 +1034,10 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       count: number;
       /** Node indices that keep their colour while everything else dims. */
       lit: Set<number>;
+      /** The clicked node, for re-filling the overlay when a spring moves it. */
+      index: number;
+      /** Who gets a halo, and how strong at full emphasis. */
+      glow: { index: number; strength: number }[];
     };
     let emphasis: Emphasis | null = null;
     /** How many of the dot instances are in use; `fillFlow` sets it. */
@@ -1032,6 +1230,17 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         if (reached !== undefined) lit.add(reached);
       }
 
+      const node = nodes[index]!;
+      const glow = [{ index, strength: HALO_FOCUSED }];
+      for (const edge of childEdges.get(node.id) ?? []) {
+        glow.push({ index: edgeEnds[edge * 2 + 1]!, strength: HALO_CHILD });
+      }
+      const parentIndex =
+        node.parentId === null ? undefined : indexById.get(node.parentId);
+      if (parentIndex !== undefined) {
+        glow.push({ index: parentIndex, strength: HALO_PARENT });
+      }
+
       const now = performance.now();
       // Re-targeting from one node to another continues the dim from wherever it
       // is rather than restarting it: between two clicks the scene is already
@@ -1043,6 +1252,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         releasedAt: null,
         count: fillFlow(index),
         lit,
+        index,
+        glow,
       };
       flowLines.visible = emphasis.count > 0;
       dotMesh.visible = dotCount > 0;
@@ -1063,6 +1274,37 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       // fades out from there instead of jumping to fully dim first.
       emphasis.releasedAt = performance.now() - (1 - emphasisRamp) * DIM_OUT_MS;
       invalidate();
+    }
+
+    /**
+     * Puts the halos on the emphasised family, every frame. Cheap - a dozen sprites
+     * at most - and it has to run every frame anyway, because the focus bump scales
+     * a node and a spring moves it, and a halo left behind either reads as a ring
+     * drawn on the backdrop. Fades with the dim, so it arrives and leaves with the
+     * rest of the emphasis rather than on its own clock.
+     */
+    function placeHalos() {
+      const glow = emphasis && emphasisDim > 0 ? emphasis.glow : [];
+      halos.forEach((sprite, slot) => {
+        const entry = glow[slot];
+        if (!entry) {
+          sprite.visible = false;
+          return;
+        }
+        const { index, strength } = entry;
+        const base = index * 3;
+        sprite.visible = true;
+        livePosition(index, sprite.position);
+        sprite.scale.setScalar(
+          2 * nodes[index]!.radius * scales[index]! * HALO_SPREAD,
+        );
+        sprite.material.color.setRGB(
+          baseNodeColours[base]!,
+          baseNodeColours[base + 1]!,
+          baseNodeColours[base + 2]!,
+        );
+        sprite.material.opacity = strength * emphasisDim;
+      });
     }
 
     /**
@@ -1242,6 +1484,49 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     /**
+     * Advances every moving spring and redraws what hangs off the nodes it moved:
+     * their instance matrices, floor marks and stems, and the arcs of every edge
+     * touching them. The dragged node itself is not integrated - it is wherever the
+     * pointer put it - but it is still redrawn, which is why it sits in `springing`
+     * for as long as it is held.
+     *
+     * Must not call `invalidate()`, for the reason `stepEmphasis` gives; it reports
+     * whether anything is still moving and `renderFrame` schedules.
+     */
+    function stepSprings(deltaMs: number): boolean {
+      if (springing.size === 0) return false;
+      const touched = new Set<number>();
+      let stems = false;
+
+      for (const index of [...springing]) {
+          const held = drag?.active === true && drag.index === index;
+        const settled = held ? false : stepSpring(springs, index, deltaMs);
+        writeMatrix(index);
+        writeShadow(index);
+        stems = writeStem(index) || stems;
+        for (const edge of edgesOfNode.get(index) ?? []) touched.add(edge);
+        // A held node is drawn once per pointer move, which re-adds it - so a
+        // pointer holding still asks for no frames, only its trailing children do.
+        if (settled || held) springing.delete(index);
+      }
+
+      for (const edge of touched) buildEdge(edge);
+      edgePositions.needsUpdate = true;
+      nodeMesh.instanceMatrix.needsUpdate = true;
+      // Raycasting and culling both test the mesh's bounding sphere before its
+      // instances, and it was computed from the layout. Dropped here, three
+      // recomputes it on the next test - a pass over ~150 matrices.
+      nodeMesh.boundingSphere = null;
+      shadowMesh.instanceMatrix.needsUpdate = true;
+      if (stems) floorPositions.needsUpdate = true;
+      // The dashes are a copy of the edge chords taken at click time, so a moved
+      // edge would leave its dashes floating where it used to be.
+      if (emphasis && emphasis.count > 0) fillFlow(emphasis.index);
+
+      return springing.size > 0;
+    }
+
+    /**
      * `controls.minDistance` is measured from the orbit target, and the target moves
      * to the clicked node on focus - so on its own it stops guaranteeing anything
      * about the hub as soon as a viewer has flown into a branch, which is exactly
@@ -1387,7 +1672,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       handle.apply(
         declutter(
           selected.map((node) => {
-            projected.set(...node.position);
+            livePosition(indexById.get(node.id)!, projected);
             const distance = projected.distanceTo(camera.position);
             // The radius as *drawn*: the focus bump scales the mesh,
             // and a base-radius offset would let a hovered circle grow into its
@@ -1440,7 +1725,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       if (cardNodeIndex === null) return;
       const node = nodes[cardNodeIndex]!;
 
-      projected.set(...node.position);
+      livePosition(cardNodeIndex, projected);
       const distance = projected.distanceTo(camera.position);
       // The same "radius as drawn" a label offsets by, so the card clears the
       // circle at any zoom and under the focus bump.
@@ -1480,7 +1765,10 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       const introMoving = stepIntro(now);
       const cameraMoving = stepCamera(now);
       const scalesMoving = stepScales(deltaMs);
+      // Before the emphasis, so the dots are placed on arcs that have already moved.
+      const springsMoving = stepSprings(deltaMs);
       const emphasisMoving = stepEmphasis(now);
+      placeHalos();
       // Returns true while damping is still settling.
       const dampingMoving = controls.update();
       keepOutsideRing();
@@ -1504,12 +1792,24 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       renderer.render(world, camera);
       // The intro sweep counts: it moves the camera the same way a fly-to does, and
       // re-ranking the pool under it churns the labels just as badly.
-      updateLabels(now, viewDistance, cameraMoving || introMoving);
+      // So do the springs: a label a throttled frame behind a node being dragged
+      // slides off its circle exactly as it does behind a flying camera.
+      updateLabels(
+        now,
+        viewDistance,
+        cameraMoving || introMoving || springsMoving,
+      );
       inFrame = false;
 
       // The only place the next frame is scheduled: whether one is needed is a
       // question about the animations, not about how many events fired.
-      if (introMoving || cameraMoving || scalesMoving || dampingMoving) {
+      if (
+        introMoving ||
+        cameraMoving ||
+        scalesMoving ||
+        springsMoving ||
+        dampingMoving
+      ) {
         invalidate();
       } else if (emphasisMoving) {
         // The dashes, alone, and they hold indefinitely: paced rather than run
@@ -1792,6 +2092,105 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
      */
     let cardHeld = false;
 
+    /**
+     * A press that landed on a node. It is only a drag once it has moved past
+     * `CLICK_SLOP_PX` (`active`); until then it is still a click, a long-press or
+     * the start of nothing, and every one of those keeps working as it did.
+     *
+     * The node moves on a plane through where it was grabbed, facing the camera,
+     * so it stays under the pointer at the depth it started at rather than sliding
+     * off along the view axis.
+     */
+    type Drag = {
+      index: number;
+      pointerId: number;
+      active: boolean;
+      plane: Plane;
+      grab: Vector3;
+      /** Everything below the dragged node, with how much of the pull it follows. */
+      followers: { index: number; gain: number }[];
+    };
+    let drag: Drag | null = null;
+    const dragHit = new Vector3();
+    const dragNormal = new Vector3();
+
+    function followersOf(index: number): Drag["followers"] {
+      const followers: Drag["followers"] = [];
+      let generation = [index];
+      let gain = 1;
+      while (generation.length > 0) {
+        gain *= DRAG_FOLLOW;
+        const next: number[] = [];
+        for (const parent of generation) {
+          for (const edge of childEdges.get(nodes[parent]!.id) ?? []) {
+            const child = edgeEnds[edge * 2 + 1]!;
+            followers.push({ index: child, gain });
+            next.push(child);
+          }
+        }
+        generation = next;
+      }
+      return followers;
+    }
+
+    /**
+     * Pulls the dragged node to under the pointer, through the rubber band, and
+     * points every follower's spring at its share of the same offset.
+     */
+    function dragTo(event: PointerEvent) {
+      if (!drag) return;
+      aim(event);
+      if (!raycaster.ray.intersectPlane(drag.plane, dragHit)) return;
+      dragHit.sub(drag.grab);
+      const pulled = dragHit.length();
+      if (pulled > 0) dragHit.multiplyScalar(rubberBand(pulled) / pulled);
+
+      const base = drag.index * 3;
+      springs.offsets[base] = springs.targets[base] = dragHit.x;
+      springs.offsets[base + 1] = springs.targets[base + 1] = dragHit.y;
+      springs.offsets[base + 2] = springs.targets[base + 2] = dragHit.z;
+      springs.velocities.fill(0, base, base + 3);
+      springing.add(drag.index);
+
+      for (const { index, gain } of drag.followers) {
+        const at = index * 3;
+        springs.targets[at] = dragHit.x * gain;
+        springs.targets[at + 1] = dragHit.y * gain;
+        springs.targets[at + 2] = dragHit.z * gain;
+        springing.add(index);
+      }
+      invalidate();
+    }
+
+    /**
+     * Lets go: every spring the drag touched is pointed back at the layout. Under
+     * reduced motion they are put straight back instead of swinging there - the
+     * drag itself is direct manipulation and stays, the overshoot is animation.
+     */
+    function endDrag() {
+      if (!drag) return;
+      const { index, pointerId, active, followers } = drag;
+      drag = null;
+      controls.enabled = true;
+      if (canvas.hasPointerCapture(pointerId)) {
+        canvas.releasePointerCapture(pointerId);
+      }
+      if (!active) return;
+
+      const snap = prefersReducedMotion();
+      for (const moved of [index, ...followers.map((entry) => entry.index)]) {
+        const at = moved * 3;
+        springs.targets.fill(0, at, at + 3);
+        if (snap) {
+          springs.offsets.fill(0, at, at + 3);
+          springs.velocities.fill(0, at, at + 3);
+        }
+        springing.add(moved);
+      }
+      canvas.style.cursor = "grab";
+      invalidate();
+    }
+
     function openCard(index: number) {
       const node = nodes[index]!;
       cardNodeIndex = index;
@@ -1878,18 +2277,42 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       );
     }
 
-    function pick(event: PointerEvent): number | null {
+    /** Points the raycaster from the camera through the pointer. */
+    function aim(event: PointerEvent) {
       const rect = canvas.getBoundingClientRect();
       pointer.set(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         -((event.clientY - rect.top) / rect.height) * 2 + 1,
       );
       raycaster.setFromCamera(pointer, camera);
+    }
+
+    function pick(event: PointerEvent): number | null {
+      aim(event);
       const hit = raycaster.intersectObject(nodeMesh, false)[0];
       return hit?.instanceId ?? null;
     }
 
     function onPointerMove(event: PointerEvent) {
+      if (drag && event.pointerId === drag.pointerId) {
+        if (
+          !drag.active &&
+          pressedAt &&
+          Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) >
+            CLICK_SLOP_PX
+        ) {
+          // It is a drag now, so it is no longer a long-press or a hover.
+          drag.active = true;
+          cancelLongPress();
+          closeCard();
+          canvas.style.cursor = "grabbing";
+        }
+        if (drag.active) {
+          dragTo(event);
+          return;
+        }
+      }
+
       // Over the open card, with no button down: the card is see-through to pointer
       // events, so this move reaches the canvas as if the pointer were over empty
       // space - and would close the card as it is being read, or swap it for a node
@@ -1944,6 +2367,43 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       }
     }
 
+    /**
+     * Registered in the capture phase, so on the canvas itself it runs before
+     * OrbitControls' own `pointerdown`: a press on a node disables the controls
+     * before they can start an orbit from it. A press on empty space - or on the
+     * hub, which stays the handle for spinning the whole graph - never gets here
+     * past the pick, and orbits exactly as before.
+     */
+    function onPointerDownCapture(event: PointerEvent) {
+      if (!event.isPrimary) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      const index = pick(event);
+      if (index === null || nodes[index]!.parentId === null) return;
+
+      const live = livePosition(index, new Vector3());
+      // The point on the sphere that was actually pressed, so the node does not
+      // jump to centre itself under the pointer on the first move.
+      const at =
+        raycaster.ray.intersectSphere(
+          new Sphere(live, nodes[index]!.radius * scales[index]!),
+          new Vector3(),
+        ) ?? live.clone();
+      camera.getWorldDirection(dragNormal);
+      // Less the offset the node already has, so grabbing one that is still
+      // swinging back picks it up where it is rather than snapping it to rest.
+      const offset = live.sub(new Vector3(...nodes[index]!.position));
+      drag = {
+        index,
+        pointerId: event.pointerId,
+        active: false,
+        plane: new Plane().setFromNormalAndCoplanarPoint(dragNormal, at),
+        grab: at.clone().sub(offset),
+        followers: followersOf(index),
+      };
+      controls.enabled = false;
+      canvas.setPointerCapture(event.pointerId);
+    }
+
     function onPointerDown(event: PointerEvent) {
       stopIntro();
       pressedAt = { x: event.clientX, y: event.clientY };
@@ -1966,6 +2426,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     function onPointerUp(event: PointerEvent) {
+      if (drag && event.pointerId === drag.pointerId) endDrag();
       const pressed = pressedAt;
       pressedAt = null;
       cancelLongPress();
@@ -2018,6 +2479,7 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
 
     /** A cancelled touch leaves a timer that would otherwise fire over nothing. */
     function onPointerCancel() {
+      endDrag();
       pressedAt = null;
       longPressConsumed = false;
       cancelLongPress();
@@ -2056,6 +2518,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     }
 
     canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerdown", onPointerDownCapture, {
+      capture: true,
+    });
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointerup", onPointerUp);
     canvas.addEventListener("pointerleave", onPointerLeave);
@@ -2138,6 +2603,9 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       cardLinkRef.current = null;
 
       canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerdown", onPointerDownCapture, {
+        capture: true,
+      });
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointerleave", onPointerLeave);
@@ -2160,6 +2628,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
       dotGeometry.dispose();
       dotMaterial.dispose();
       dotMesh.dispose();
+      haloTexture.dispose();
+      for (const halo of halos) halo.material.dispose();
       floorGeometry.dispose();
       floorMaterial.dispose();
       shadowGeometry.dispose();

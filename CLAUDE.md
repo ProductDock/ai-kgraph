@@ -91,7 +91,7 @@ changes no file in it.
   ceiling is what binds: at 0.84 the lightest dark-mode blue falls to chroma **0.099**,
   under the grey floor, and an unclamped depth-4 yellow reaches L 0.88 and 1.44:1 against
   the page. The ceiling **flattens the lightness ladder** of three slots per theme (light
-  2/3/4, dark 3/6/7) — those branches are separated by the hue turn alone below that
+  1/2/6, dark 1/4/5) — those branches are separated by the hue turn alone below that
   point. It is a hard-coded list of slots, so a fourth joining it fails the build as a
   decision, not a surprise.
 - **Tinted descendants are deliberately outside the validated lightness band.** That gate
@@ -226,6 +226,13 @@ changes no file in it.
   light (`src/lib/graph/colour.ts`). Both ends are validated. Lowering that constant
   pushes the darkest hues out of the lightness band — it is a palette number that happens
   to be consumed by the renderer, which is why it does not live in `graph-scene.tsx`.
+- **The ball look is two marks outside that range, taken knowingly.** The node material
+  is Phong, whose diffuse term is the same Lambert BRDF, so the body is still drawn as
+  calibrated; on top sit a soft specular highlight (`SPECULAR`, `SHININESS`) and a rim
+  darkened toward the silhouette (`RIM_FLOOR`, `RIM_POWER`, patched in before fog). Like
+  the focus glow, neither is covered by `palette.contract.test.ts`. Deepening the
+  shading by lowering `NODE_TERMINATOR` instead would break the contract — that is why
+  the depth comes from these.
 - **The scene's non-content ink is an ordered ramp**, shadow < floor < edge < every node,
   measured as contrast against the backdrop. An edge is content; the floor and its marks
   are depth cues, and a floor louder than an edge turns the picture into a diagram drawn
@@ -257,6 +264,28 @@ changes no file in it.
   is stateless, so its on/off churn is smoothed by a `LABEL_FADE_MS` opacity transition
   rather than by hysteresis; a span that changes hands is pinned at zero and faded up, or
   it would cross-fade one node's name into another's.
+- **Pressing a node and dragging moves the node, not the camera** (`spring.ts`).
+  Orbit starts from empty space or the hub — the hub is deliberately not draggable,
+  so there is always a large handle for turning the graph. The press is claimed by a
+  **capture-phase** `pointerdown` that disables `OrbitControls` before its own
+  listener sees it; a press that never passes `CLICK_SLOP_PX` is still a click or a
+  long-press. A drag only ever moves a per-node _offset_ from the layout position,
+  and every offset springs back to zero on release, so the layout stays the resting
+  state and `layout.test.ts` still describes it. The branch below follows through
+  springs at `DRAG_FOLLOW` per generation; the pull is rubber-banded to
+  `DRAG_REACH`. Anything that draws at a node's position must read
+  `livePosition()`, not `node.position`, or it is left behind mid-drag. Reduced
+  motion keeps the drag and drops the overshoot.
+- **The focus glow is sprites, not a post-processing pass.** A bloom pass would
+  move node pixels off the values `palette.contract.test.ts` validates, and the
+  canvas is transparent over a CSS backdrop. The halos are a new mark around the
+  focused node, its children and its parent, and they are **not** covered by the
+  contract. There is no vignette: `.graph-space` already is one, and its dark end is
+  already as dark as the node contrast floor allows.
+- **The dark backdrop is bounded by green.** `#008300` is the darkest hue, at
+  3.09:1 against `--graph-space-near`; any lighter backdrop pushes it under 3:1 and
+  into the label relief only light mode needs. The dark floor and edges are bounded
+  by green's shaded terminator (2.52:1). Both limits are in `globals.css`.
 - **Single click is still spent on camera focus.** The node card that was deferred to
   double-click is built instead on **idle hover on desktop and long-press on tablet**
   (`node-hover-card.tsx`), so click-to-focus is untouched. *Idle* hover is the narrow
