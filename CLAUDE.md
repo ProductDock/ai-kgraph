@@ -226,6 +226,13 @@ changes no file in it.
   light (`src/lib/graph/colour.ts`). Both ends are validated. Lowering that constant
   pushes the darkest hues out of the lightness band — it is a palette number that happens
   to be consumed by the renderer, which is why it does not live in `graph-scene.tsx`.
+- **The ball look is two marks outside that range, taken knowingly.** The node material
+  is Phong, whose diffuse term is the same Lambert BRDF, so the body is still drawn as
+  calibrated; on top sit a soft specular highlight (`SPECULAR`, `SHININESS`) and a rim
+  darkened toward the silhouette (`RIM_FLOOR`, `RIM_POWER`, patched in before fog). Like
+  the focus glow, neither is covered by `palette.contract.test.ts`. Deepening the
+  shading by lowering `NODE_TERMINATOR` instead would break the contract — that is why
+  the depth comes from these.
 - **The scene's non-content ink is an ordered ramp**, shadow < floor < edge < every node,
   measured as contrast against the backdrop. An edge is content; the floor and its marks
   are depth cues, and a floor louder than an edge turns the picture into a diagram drawn

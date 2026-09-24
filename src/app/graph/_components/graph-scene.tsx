@@ -17,7 +17,7 @@ import {
   LineBasicMaterial,
   LineSegments,
   MeshBasicMaterial,
-  MeshLambertMaterial,
+  MeshPhongMaterial,
   Object3D,
   PerspectiveCamera,
   Plane,
@@ -174,6 +174,22 @@ const KEY = 1 - AMBIENT;
  * comment above says it means.
  */
 const LAMBERT_PI = Math.PI;
+/**
+ * What makes a node read as a ball rather than a shaded disc: a soft highlight
+ * where the key light glints toward the camera, and a rim that darkens toward the
+ * silhouette. The 24% of shading `NODE_TERMINATOR` allows is not enough on its own.
+ *
+ * Both are marks *outside* the palette contract, taken knowingly, like the focus
+ * glow: the body of every node is still drawn exactly as calibrated above (Phong's
+ * diffuse term is the same Lambert BRDF), and the highlight and rim cover a small
+ * band at its centre and edge. `palette.contract.test.ts` does not cover them.
+ */
+const SPECULAR = 0x8c8c8c;
+const SHININESS = 28;
+/** How dark the very edge of a node is, as a fraction of its lit colour. */
+const RIM_FLOOR = 0.62;
+/** How tightly the rim hugs the silhouette; higher is a thinner band. */
+const RIM_POWER = 2.4;
 /** Nudges the key off the view axis, so the terminator is never a concentric ring. */
 const KEY_OFFSET = new Vector3(-0.35, 0, 0.2);
 
@@ -462,12 +478,24 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
     world.add(ambientLight, keyLight);
 
     // ---- nodes: one InstancedMesh, one draw call (NFR-2) ----------------------
-    // Lambert, not basic: see AMBIENT/KEY above for why shading this does not move
-    // a node off the value the ramp validator passed (spec §7.4). Lambert rather
-    // than standard because there is no specular highlight to earn here and a
-    // highlight would be a second, uncalibrated colour on every node.
+    // Lit, not basic: see AMBIENT/KEY above for why shading this does not move a
+    // node's body off the value the ramp validator passed (spec §7.4). Phong
+    // rather than Lambert only for the highlight, and the rim is patched in
+    // before fog so a far node's edge fades with the rest of it - see SPECULAR.
     const nodeGeometry = new SphereGeometry(1, 32, 24);
-    const nodeMaterial = new MeshLambertMaterial({ fog: true });
+    const nodeMaterial = new MeshPhongMaterial({
+      fog: true,
+      specular: SPECULAR,
+      shininess: SHININESS,
+    });
+    nodeMaterial.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <opaque_fragment>",
+        `float rimFacing = saturate(dot(normal, normalize(vViewPosition)));
+        outgoingLight *= mix(${RIM_FLOOR.toFixed(3)}, 1.0, 1.0 - pow(1.0 - rimFacing, ${RIM_POWER.toFixed(3)}));
+        #include <opaque_fragment>`,
+      );
+    };
     const nodeMesh = new InstancedMesh(
       nodeGeometry,
       nodeMaterial,
