@@ -94,13 +94,13 @@
      asserted in palette.contract.test.ts, which is what stopped it the last time. */
   --graph-hub: #01547f;
   --graph-branch-0: #2a78d6; /* blue */
-  --graph-branch-1: #008300; /* green */
+  --graph-branch-1: #eda100; /* yellow */
   --graph-branch-2: #e87ba4; /* magenta */
-  --graph-branch-3: #eda100; /* yellow */
-  --graph-branch-4: #1baf7a; /* aqua */
-  --graph-branch-5: #db5824; /* orange */
-  --graph-branch-6: #5546b5; /* violet */
-  --graph-branch-7: #e34948; /* red */
+  --graph-branch-3: #008300; /* green */
+  --graph-branch-4: #e34948; /* red */
+  --graph-branch-5: #5546b5; /* violet */
+  --graph-branch-6: #1baf7a; /* aqua */
+  --graph-branch-7: #db5824; /* orange */
 
   /* The scene's non-content ink, as an ordered ramp: quieter the less it means.
      shadow < floor < edge < every node, measured as contrast against the backdrop
@@ -158,13 +158,13 @@
        against the 2.0 light-end floor where this one gets 2.68:1. */
     --graph-hub: #8fd0f5; /* ProductDock brand blue, lightened - see below */
     --graph-branch-0: #3987e5; /* blue */
-    --graph-branch-1: #008300; /* green */
+    --graph-branch-1: #c98500; /* yellow */
     --graph-branch-2: #d55181; /* magenta */
-    --graph-branch-3: #c98500; /* yellow */
-    --graph-branch-4: #199e70; /* aqua */
-    --graph-branch-5: #d95926; /* orange */
-    --graph-branch-6: #9085e9; /* violet */
-    --graph-branch-7: #e66767; /* red */
+    --graph-branch-3: #008300; /* green */
+    --graph-branch-4: #e66767; /* red */
+    --graph-branch-5: #9085e9; /* violet */
+    --graph-branch-6: #199e70; /* aqua */
+    --graph-branch-7: #d95926; /* orange */
     /* Lifted from #2a2f35 / #252c34 / #0d1116, where the floor measured 1.23:1
        against the backdrop and read as no grid at all. The ceiling on this ramp
        is the quietest node - green at its shaded terminator, 2.52:1 on the new
@@ -199,13 +199,13 @@
      against the 2.0 light-end floor where this one gets 2.68:1. */
   --graph-hub: #8fd0f5; /* ProductDock brand blue, lightened - see below */
   --graph-branch-0: #3987e5; /* blue */
-  --graph-branch-1: #008300; /* green */
+  --graph-branch-1: #c98500; /* yellow */
   --graph-branch-2: #d55181; /* magenta */
-  --graph-branch-3: #c98500; /* yellow */
-  --graph-branch-4: #199e70; /* aqua */
-  --graph-branch-5: #d95926; /* orange */
-  --graph-branch-6: #9085e9; /* violet */
-  --graph-branch-7: #e66767; /* red */
+  --graph-branch-3: #008300; /* green */
+  --graph-branch-4: #e66767; /* red */
+  --graph-branch-5: #9085e9; /* violet */
+  --graph-branch-6: #199e70; /* aqua */
+  --graph-branch-7: #d95926; /* orange */
   --graph-edge: #515c6b;
   --graph-floor: #3f4a59;
   --graph-shadow: #131820;

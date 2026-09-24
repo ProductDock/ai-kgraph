@@ -91,7 +91,7 @@ changes no file in it.
   ceiling is what binds: at 0.84 the lightest dark-mode blue falls to chroma **0.099**,
   under the grey floor, and an unclamped depth-4 yellow reaches L 0.88 and 1.44:1 against
   the page. The ceiling **flattens the lightness ladder** of three slots per theme (light
-  2/3/4, dark 3/6/7) — those branches are separated by the hue turn alone below that
+  1/2/6, dark 1/4/5) — those branches are separated by the hue turn alone below that
   point. It is a hard-coded list of slots, so a fourth joining it fails the build as a
   decision, not a surprise.
 - **Tinted descendants are deliberately outside the validated lightness band.** That gate

@@ -186,7 +186,7 @@ describe("contrast against the backdrop", () => {
    * whoever changes it has to decide again whether the relief still covers it.
    */
   const RELIEF_REQUIRED = {
-    light: { "--graph-space-near": [2, 3, 4], "--graph-space-far": [2, 3, 4] },
+    light: { "--graph-space-near": [1, 2, 6], "--graph-space-far": [1, 2, 6] },
     dark: { "--graph-space-near": [], "--graph-space-far": [] },
   } as const;
 
@@ -335,7 +335,7 @@ describe("the branch-family tint", () => {
    * separates those levels. Written as slot numbers rather than derived, because
    * flattening a ladder is a thing to decide, not to discover.
    */
-  const FLATTENED = { light: [2, 3, 4], dark: [3, 6, 7] } as const;
+  const FLATTENED = { light: [1, 2, 6], dark: [1, 4, 5] } as const;
 
   it.each(THEMES)("%s: only the documented ladders flatten out", (theme) => {
     const flattened = Array.from({ length: HUE_COUNT }, (_, slot) => ({
