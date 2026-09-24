@@ -1,0 +1,82 @@
+# Announces a new version of the app to Slack, naming everyone who worked on it.
+#
+# Nothing deploys this app yet, so "a new version" means: `verify` passed on a push to
+# main. That is the build that would go live. When a real deploy job exists, re-point
+# the trigger at it; the message-building below does not change.
+#
+# "What's in it" is everything between the last main commit that passed verify and this
+# one, so a run cancelled by verify's concurrency group (two quick merges) is folded
+# into the next announcement rather than lost. Pushes verify skips (intent/, docs/,
+# non-content markdown) change nothing in the app and are announced with the next
+# version that does.
+#
+# People are commit authors plus Co-authored-by trailers, de-duplicated by email. Bots
+# and the Claude co-author trailer are left out: the message is about who to thank.
+#
+# Skipped quietly if SLACK_WEBHOOK_URL is not set, like spec-from-intent.yml.
+
+name: release-notify
+
+on:
+  workflow_run:
+    workflows: [verify]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  notify:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Slack
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          SERVER: ${{ github.server_url }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "::notice::SLACK_WEBHOOK_URL not set — skipping notification"
+            exit 0
+          fi
+
+          # The last earlier push to main that passed verify. Runs come newest first.
+          base="$(gh api "repos/$REPO/actions/workflows/verify.yml/runs?branch=main&event=push&status=success&per_page=50" \
+            --jq "[.workflow_runs[] | select(.id < $RUN_ID and .head_sha != \"$HEAD_SHA\")][0].head_sha // empty")"
+
+          if [ -n "$base" ]; then
+            compare="$(gh api "repos/$REPO/compare/$base...$HEAD_SHA")"
+            link="$SERVER/$REPO/compare/${base:0:7}...${HEAD_SHA:0:7}"
+          else
+            # First announcement ever: just this commit.
+            compare="$(gh api "repos/$REPO/commits/$HEAD_SHA" | jq '{commits: [.]}')"
+            link="$SERVER/$REPO/commit/$HEAD_SHA"
+          fi
+
+          changes="$(jq -r '.commits[] | "• " + (.commit.message | split("\n")[0])' <<<"$compare")"
+
+          people="$(jq -r '
+            [ .commits[]
+              | select((.author.type // "") != "Bot")
+              | { name: .commit.author.name, email: (.commit.author.email | ascii_downcase) },
+                ( .commit.message
+                  | scan("(?im)^co-authored-by:[ \\t]*([^<\\n]+?)[ \\t]*<([^>\\n]+)>")
+                  | { name: .[0], email: (.[1] | ascii_downcase) } )
+            ]
+            | map(select((.email | test("noreply@anthropic\\.com$|\\[bot\\]@")) | not))
+            | unique_by(.email) | map(.name) | unique | join(", ")
+          ' <<<"$compare")"
+
+          text="$(printf '🚀 New version of *ai-kgraph* is out (%s)\n\n%s\n\n*Worked on this:* %s' \
+            "$link" "$changes" "${people:-nobody listed}")"
+
+          payload="$(jq -nc --arg t "$text" '{text:$t}')"
+          curl -sS --fail -X POST -H 'Content-Type: application/json' \
+            -d "$payload" "$SLACK_WEBHOOK_URL" >/dev/null
