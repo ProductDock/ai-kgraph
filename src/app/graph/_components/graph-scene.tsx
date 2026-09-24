@@ -54,6 +54,7 @@ import {
   selectLabelled,
   type GraphLabelsHandle,
 } from "./graph-labels";
+import { GraphStatsPanel } from "./graph-stats-panel";
 import {
   NodeHoverCard,
   type CardAnchor,
@@ -2672,6 +2673,8 @@ export function GraphSceneCanvas({ scene }: { scene: GraphScene }) {
         onLinkPointerLeave={() => cardLinkRef.current?.release()}
         onLinkClick={() => cardLinkRef.current?.navigate()}
       />
+      {/* After the card, so it paints above it (graph-progress-stats §9.2). */}
+      <GraphStatsPanel stats={scene.stats} />
       {/* The focused node is React state rather than a plain ref because this
           line re-renders with it. The effect reads `focusedIdRef`, so flying to a
           node never rebuilds the scene. */}

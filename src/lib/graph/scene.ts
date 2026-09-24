@@ -1,9 +1,11 @@
 import { assignColours } from "@/lib/graph/colour";
 import { layout, sceneRadius } from "@/lib/graph/layout";
 import { radiusForNode } from "@/lib/graph/palette";
+import { computeGraphStats } from "@/lib/graph/stats";
 import { flatten } from "@/lib/graph/tree";
 import type {
   GraphScene,
+  GraphSceneNode,
   GraphSeed,
   NodeContent,
   Vec3,
@@ -27,18 +29,21 @@ export function buildScene(
   const positions = layout(nodes);
   const colours = assignColours(nodes);
 
+  const sceneNodes: GraphSceneNode[] = nodes.map((node) => ({
+    ...node,
+    assignee: content.get(node.id)?.assignee ?? "Unassigned",
+    status: content.get(node.id)?.status ?? "Todo",
+    position: positions.get(node.id) as Vec3,
+    radius: radiusForNode(node),
+    colourToken: colours.get(node.id)!.token,
+    colourTint: colours.get(node.id)!.tint,
+    colourHueShift: colours.get(node.id)!.hueShift,
+  }));
+
   return {
-    nodes: nodes.map((node) => ({
-      ...node,
-      assignee: content.get(node.id)?.assignee ?? "Unassigned",
-      status: content.get(node.id)?.status ?? "Todo",
-      position: positions.get(node.id) as Vec3,
-      radius: radiusForNode(node),
-      colourToken: colours.get(node.id)!.token,
-      colourTint: colours.get(node.id)!.tint,
-      colourHueShift: colours.get(node.id)!.hueShift,
-    })),
+    nodes: sceneNodes,
     edges,
     radius: sceneRadius(nodes),
+    stats: computeGraphStats(sceneNodes),
   };
 }
