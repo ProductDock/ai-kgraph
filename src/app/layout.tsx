@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { THEME_SCRIPT } from "@/lib/theme-script";
 
 // ProductDock brand typeface (design-system skill). `variable` feeds
 // --font-poppins, consumed by --font-sans in globals.css; `display: swap`
@@ -18,17 +19,6 @@ export const metadata: Metadata = {
   description: "Knowledge-graph baseline for the ai-kgraph AI-Native SDLC.",
 };
 
-const THEME_SCRIPT = `
-(function () {
-  try {
-    var stored = localStorage.getItem("theme");
-    if (stored === "dark" || stored === "light") {
-      document.documentElement.setAttribute("data-theme", stored);
-    }
-  } catch (e) {}
-})();
-`;
-
 export default function RootLayout({
   children,
 }: {
@@ -41,8 +31,9 @@ export default function RootLayout({
     // this element's own attributes — it does not extend to children.
     <html lang="en" className={poppins.variable} suppressHydrationWarning>
       <head>
-        {/* Sets data-theme before first paint to avoid a flash of the wrong
-            theme (spec §7.3). Runs under CSP Report-Only, so no nonce yet. */}
+        {/* Always sets data-theme before first paint — dark unless "light" is
+            stored — to avoid a flash of the wrong theme (spec §7.3). Runs under
+            CSP Report-Only, so no nonce yet. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body className="bg-background text-foreground flex min-h-screen flex-col antialiased">
