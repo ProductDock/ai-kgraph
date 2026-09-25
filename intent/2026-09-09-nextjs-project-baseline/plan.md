@@ -1,7 +1,7 @@
 # Plan: `nextjs-project-baseline`
 
-- **Intent:** `intent/nextjs-project-baseline/intent.md`
-- **Spec:** `intent/nextjs-project-baseline/spec.md` (merged to `main` at `bc2d1a7`, gate 2 passed)
+- **Intent:** `intent/2026-09-09-nextjs-project-baseline/intent.md`
+- **Spec:** `intent/2026-09-09-nextjs-project-baseline/spec.md` (merged to `main` at `bc2d1a7`, gate 2 passed)
 - **Issue:** #6 `plan: A ready-to-go Next.js baseline…`
 - **Stage:** 3 — plan & design review
 
@@ -180,7 +180,7 @@ Each step is independently verifiable. This follows spec §13's suggested sequen
 12. **`verify.yml`, `.gitignore`, `README.md`.** Then the full fresh-clone proof run. →
     **V-14, V-15**
 
-Then: commit `intent/nextjs-project-baseline/plan.md` on `plan/nextjs-project-baseline`
+Then: commit `intent/2026-09-09-nextjs-project-baseline/plan.md` on `plan/nextjs-project-baseline`
 referencing #6 — **before** any of the above is written.
 
 ## Risks

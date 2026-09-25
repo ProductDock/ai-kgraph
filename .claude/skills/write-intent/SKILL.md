@@ -41,8 +41,11 @@ write the file.
 
 5. **Open it as a pull request.** Never commit to the default branch — the product
    owner's merge *is* the approval gate, so there has to be something to approve.
-   - path: `intent/<slug>/intent.md`, where `<slug>` is a short kebab-case name for
-     the change (e.g. `intent/claims-status-visibility/intent.md`)
+   - path: `intent/<slug>/intent.md`, where `<slug>` is today's date (`YYYY-MM-DD`)
+     followed by a short kebab-case name for the change
+     (e.g. `intent/2026-09-25-claims-status-visibility/intent.md`). The date is the day
+     the intent was written, so `intent/` lists in the order work was started; it is part
+     of the slug everywhere the slug appears (branch, PR title, spec, plan issue)
    - set `**Status:**` to `awaiting product owner review`
    - branch `intent/<slug>`, one commit, message `intent: <slug>`
    - `gh pr create --title "intent: <slug>" --label intent --label needs-po-review`,

@@ -1,6 +1,9 @@
 # intent/
 
-One folder per change, named with a short kebab-case slug:
+One folder per change. Its slug is the date the intent was written, then a short
+kebab-case name — `YYYY-MM-DD-<name>`, e.g. `2026-09-24-graph-progress-stats` — so the
+folder listing reads in the order work was started. The date is fixed when `intent.md` is
+first committed and never changes, even if the spec or plan lands days later:
 
 ```
 intent/<slug>/intent.md            # Stage 1 — written by a contributor with the write-intent skill

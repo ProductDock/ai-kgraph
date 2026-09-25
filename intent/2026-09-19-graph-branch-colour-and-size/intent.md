@@ -81,7 +81,7 @@ topic waiting to have them. No two same-coloured parents are visible near each o
   ramp has five steps; after this it is a deliberate limit on how deep the content may
   go, for readability and authoring. A sixth level still fails the build.
 - Accessibility of the scene itself is already recorded debt
-  (`intent/graph-accessibility/`) and this change is not expected to pay it off — but
+  (`intent/2026-09-17-graph-accessibility/`) and this change is not expected to pay it off — but
   it must not make things worse.
 
 ## Open questions

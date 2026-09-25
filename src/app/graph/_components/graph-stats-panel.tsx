@@ -34,7 +34,7 @@ export function statsShares(stats: GraphStats): StatsShares {
 
 /**
  * How far along the graph is, in the top-right corner of the scene
- * (`intent/graph-progress-stats/`). Build-time numbers - as fresh as the last
+ * (`intent/2026-09-24-graph-progress-stats/`). Build-time numbers - as fresh as the last
  * deploy (spec C-2) - so nothing here fetches or refreshes.
  *
  * The positioned element is the corner *stack*, not the card, so a later widget is
@@ -43,7 +43,7 @@ export function statsShares(stats: GraphStats): StatsShares {
  * it does not orbit (§9.2). After the hover card in the DOM, so it paints above it.
  *
  * `aria-hidden` and the toggle `tabIndex={-1}`, the posture the rest of the scene
- * has (`intent/graph-accessibility/`, §9.5): a tab stop inside an `aria-hidden`
+ * has (`intent/2026-09-17-graph-accessibility/`, §9.5): a tab stop inside an `aria-hidden`
  * subtree is one a screen reader never announces.
  */
 export function GraphStatsPanel({ stats }: { stats: GraphStats }) {

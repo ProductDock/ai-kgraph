@@ -65,7 +65,7 @@ Unchanged: `schema.ts`, `seed.ts`, `content.ts`, `tree.ts`, `layout.ts`, `colour
 
 ### CLAUDE.md bullet (Graph data)
 
-> **The stats panel counts topics, not nodes** (`intent/graph-progress-stats/`).
+> **The stats panel counts topics, not nodes** (`intent/2026-09-24-graph-progress-stats/`).
 > `computeGraphStats()` runs inside `buildScene()` and excludes the hub (`parentId ===
 > null`): the hub can't carry a status (`content/index.md` fails the build), so counting it
 > would keep 100% out of reach. A group marked Done counts as Done whatever is under it (C-3).

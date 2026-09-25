@@ -19,8 +19,9 @@ that rolls straight into building removes it.
 implementation, not a spec amendment. A PR is a request for someone's attention, and asking
 for it is the human's call — every time, including when they have said yes to one before.
 
-Argument for `<slug>`: the intent slug, e.g. `claims-status-visibility`. If none was
-given, list `intent/*/` folders that have a `spec.md` but no `plan.md` and ask which.
+Argument for `<slug>`: the intent slug — the folder name, date included, e.g.
+`2026-09-25-claims-status-visibility`. Given only the name without its date, match it
+against `intent/*-<name>/`. If none was given, list `intent/*/` folders that have a `spec.md` but no `plan.md` and ask which.
 
 ## Procedure
 

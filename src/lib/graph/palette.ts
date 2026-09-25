@@ -30,7 +30,7 @@ export const MAX_DEPTH = 4;
  * unmistakably larger than a ring topic. Tuning values, judged on screen.
  *
  * It used to also have to be large enough to hold its own name *inside* it. It does
- * not any more - `intent/graph-labels-under-nodes/` put every label below its circle
+ * not any more - `intent/2026-09-19-graph-labels-under-nodes/` put every label below its circle
  * and made no exception for the hub - so the only floor left on this number is the
  * one the eye sets. It came down from 2.6 on that basis; at 2.2 it is still 2.1x a
  * ring topic. Shrinking it only loosens the two assertions that mention it

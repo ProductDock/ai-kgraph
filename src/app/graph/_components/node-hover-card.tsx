@@ -134,7 +134,7 @@ export interface NodeHoverCardHandle {
  *
  * `aria-hidden`, the same posture the label layer has: the scene is unreachable by
  * keyboard and opaque to a screen reader, which is known, separately tracked debt
- * (`intent/graph-accessibility/`), widened here knowingly (spec C-4; content-pages
+ * (`intent/2026-09-17-graph-accessibility/`), widened here knowingly (spec C-4; content-pages
  * C-2). The link is `tabIndex={-1}` for the same reason: a focusable element inside
  * an `aria-hidden` subtree is a tab stop a screen reader never announces.
  */

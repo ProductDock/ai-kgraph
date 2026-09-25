@@ -74,7 +74,7 @@ Restated from the intent, so nothing below is quietly folded into this piece of 
   already is — see the consequence stated in D-4 below.
 - No keyboard or screen-reader access to the panel. It's visual-only chrome over the 3D
   view, held to the same known, already-accepted accessibility debt the rest of that view
-  carries (`intent/graph-accessibility/`), not the WCAG 2.2 AA bar the rest of the page
+  carries (`intent/2026-09-17-graph-accessibility/`), not the WCAG 2.2 AA bar the rest of the page
   meets.
 
 #### 2.3 Deferred
