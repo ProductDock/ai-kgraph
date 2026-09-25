@@ -13,9 +13,9 @@ describe("content read seam", () => {
 
   it("resolves a real slug built from what is actually on disk", () => {
     const slugs = listSlugs("intent");
-    expect(slugs).toContain("nextjs-project-baseline/plan");
+    expect(slugs).toContain("2026-09-09-nextjs-project-baseline/plan");
 
-    const doc = readDoc("intent", "nextjs-project-baseline/plan");
+    const doc = readDoc("intent", "2026-09-09-nextjs-project-baseline/plan");
     expect(doc.content).toContain("# Plan: `nextjs-project-baseline`");
   });
 });
