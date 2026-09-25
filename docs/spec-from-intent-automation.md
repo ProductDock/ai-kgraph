@@ -93,7 +93,12 @@ The prompt therefore requires the spec to be ordered:
   design, security, verification. Assumes its reader has read Part A.
 - **`## Areas of concern`** stays last and outside both parts, each concern written so the
   PO can act on it without reading Part B: the conflict, the resolution taken, and the
-  decision needed from them.
+  decision needed from them. Each is a fixed four-line shape — a one-line heading, then
+  **Conflict** / **Chosen** / **Decide**, one sentence each — because free-form concerns
+  ran to a paragraph apiece and restated reasoning the cross-referenced section already
+  held. A risk with no decision attached goes in Part A's risks instead, so a non-empty
+  section (and the `needs-policy-owner` label it triggers) always means "someone must
+  answer something".
 
 Sections are numbered continuously across both parts so cross-references resolve. The PR
 body tells the product owner to read Part A and the concerns, and that Part B is the tech

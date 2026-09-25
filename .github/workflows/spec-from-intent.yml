@@ -148,8 +148,15 @@ jobs:
           Number the sections continuously across both parts so cross-references resolve. \
           End the file with a '## Areas of concern' section, outside both parts; if there \
           are none, write 'None.' there. Write each concern so a product owner can act on \
-          it without reading Part B: what the conflict is, which way you resolved it, and \
-          what decision you need from them." \
+          it without reading Part B, and keep it short - the reasoning already lives in \
+          the section you cross-reference, so do not restate it here. Use exactly this \
+          shape per concern, one sentence per line, plain words, no hedging: \
+          a bold heading line '**C-n - <the concern in under 15 words>** (§refs)', then \
+          three bullets: '- **Conflict:** <what clashes, one sentence>', \
+          '- **Chosen:** <which way this spec went, one sentence>', \
+          '- **Decide:** <the one question the product owner must answer>'. \
+          Only list items that need a product owner decision; a risk they merely need to \
+          know about belongs in Part A's risks, not here." \
             --model claude-sonnet-5 \
             --max-turns 60 \
             --allowed-tools 'Read,Grep,Glob,Skill,Write' \
