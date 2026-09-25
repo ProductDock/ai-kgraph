@@ -41,12 +41,12 @@ this is a change to what happens before someone has made a choice, not a change 
 already made. The toggle itself, and light mode itself, both stay exactly as fully supported
 as they are now.
 
-Making this change well surfaces one more thing worth fixing at the same time: the toggle
-button itself has a small, already-known display glitch (unrelated to this change, and
-already on record — see §9.3) where it can briefly show the wrong option for the theme
-actually on screen. Today that only affects a minority of visitors. Once dark is what nearly
-every new visitor sees, that same glitch would show up for nearly everyone, so this spec
-fixes it as part of the same piece of work (§4, decision 2).
+Making this change well surfaces one more thing: the toggle button itself has a small,
+already-known display glitch (unrelated to this change, and already on record — see §9.3)
+where it can briefly show the wrong option for the theme actually on screen. Today that only
+affects a minority of visitors. Once dark is what nearly every new visitor sees, that same
+glitch would show up for nearly everyone. **It is fixed separately, not here** — tracked as
+issue #69 (§4, decision 2; Areas of concern, C-3).
 
 ### 2. Scope
 
@@ -57,9 +57,6 @@ fixes it as part of the same piece of work (§4, decision 2).
   every page, regardless of their device's own setting.
 - Light stays fully reachable: clicking the toggle still switches to it, and that choice is
   still remembered exactly as it is today.
-- The toggle's own icon and wording always match the theme actually shown the moment a page
-  appears, including for a first-time visitor now seeing dark without having clicked
-  anything (§1; §4, decision 2).
 - No visible flash of the wrong theme while a page loads, for any visitor, under the new
   default or under a remembered choice — the same guarantee the app already gives today.
 
@@ -76,6 +73,8 @@ Restated from the intent, so nothing below is quietly folded into this piece of 
   having done anything themselves (§4, decision 3; Areas of concern, C-4).
 - No change to how or where a chosen theme is remembered, beyond what's needed to keep the
   new default from ever being recorded as if it were a real choice (§4, decision 1).
+- No fix to the toggle's own icon and wording disagreeing with the theme on screen — that
+  ships as its own change, issue #69 (§4, decision 2; Areas of concern, C-3).
 
 #### 2.3 Deferred
 
@@ -109,23 +108,19 @@ just because they're written down — confirm or cut each one.
    people who *still* haven't touched the toggle by then. Anyone who has explicitly picked
    light or dark at any point keeps that pick forever, until they change it themselves
    (§9.2). **Confirm this is the right way to think about "remembered" versus "default."**
-2. **This spec also closes a small, already-known display glitch in the toggle**, first
-   flagged as a follow-up in an earlier piece of work and not yet fixed: right now, the
-   toggle can show the wrong icon and wording for the theme actually on screen, for as long
-   as it takes a visitor's first click to correct it. Today that only affects visitors whose
-   device already prefers dark — a minority. Once dark is the default nearly everyone sees,
-   this same glitch would show up for nearly every first-time visitor instead, so this spec
-   fixes it as part of the same change rather than shipping a toggle that visibly
-   contradicts the page underneath it for most new visitors (§9.3; Areas of concern, C-3).
-   **Confirm this small addition to scope is fine, or ask for it to ship as its own,
-   separate change** — with the trade-off that the toggle would then visibly show the wrong
-   thing to most new visitors for however long the two pieces of work are apart.
+2. **A small, already-known display glitch in the toggle ships as its own change, not in
+   this one** (decided 2026-09-25; issue #69). First flagged as a follow-up in an earlier
+   piece of work and not yet fixed: the toggle can show the wrong icon and wording for the
+   theme actually on screen, for as long as it takes a visitor's first click to correct it.
+   Today that only affects visitors whose device already prefers dark — a minority. Once
+   dark is the default nearly everyone sees, it shows up for nearly every first-time visitor
+   instead, **until #69 lands** — an accepted trade-off (§9.3; Areas of concern, C-3).
 3. **Someone who already visits regularly today, on a light-preferring device, and has
    simply never touched the toggle, will see the site's whole look change the next time they
    open it after this ships — with nothing on screen explaining why.** The intent already
    frames this group as intentionally affected, not as an edge case, so this spec doesn't add
-   any explanation for it (§9.1; Areas of concern, C-4). **Confirm a silent switch like that
-   is acceptable, or ask for a small one-time explanation the first time it happens.**
+   any explanation for it (§9.1; Areas of concern, C-4). **Decided 2026-09-25: a silent
+   switch is acceptable.**
 4. **Visitors browsing with JavaScript switched off, or with their browser blocking the
    site's ability to remember anything, keep seeing whatever their device already showed
    them — they don't get the new dark default at all.** This is narrow, and it's already true
@@ -150,9 +145,9 @@ Each of these is something you can point at, or tap, on screen; verification is 
   supports.
 - **FR-5.** The toggle still offers exactly two positions, light and dark; clicking it always
   sets an explicit, remembered choice, exactly as today (§3, Q3).
-- **FR-6.** The toggle's icon and wording always match the theme actually shown on screen the
-  instant a page appears — including for a first-time visitor now seeing dark without having
-  clicked anything (§4, decision 2).
+- **FR-6.** *Removed 2026-09-25* — the toggle's icon and wording matching the theme on screen
+  moved to issue #69 (§4, decision 2). Until it lands, a first-time visitor seeing the dark
+  default may see the toggle offer "dark" until their first click.
 - **FR-7.** The graph and everything on it (including the statistics panel), and every other
   themed part of the app, render in dark by default for a first-time visitor exactly as they
   would if that visitor had clicked "dark" themselves — nothing about how the change is
@@ -170,7 +165,7 @@ set to light, and it opens in dark.
 | **A visitor who already comes back regularly, and has simply never touched the toggle, will see the site's look change without warning the next time they open it after this ships** (§4, decision 3). | This isn't limited to true first-time visitors the way "first impression" language suggests — it includes anyone, however long they've been coming back, who happens to have never clicked the toggle. Some of them may read the sudden change as something broken rather than intended. |
 | **The parts of the app outside the graph haven't been specifically checked for how well they read in dark** (§3, Q2). | These pages are about to become most new visitors' actual first impression of dark mode, rather than something only people who deliberately opted in ever saw. If anything reads poorly there, far more people notice it than would have before this change. |
 | **Once a visitor touches the toggle even once, there's no way back to "just match my device"** except clearing their browser data or using a fresh profile (§3, Q3). | Someone who actually wants "whatever my device says" gets that for free today by doing nothing. After this ships, that only lasts until the first time they touch the toggle at all — including by accident. |
-| **If the toggle's own display glitch (§4, decision 2) doesn't get fixed alongside this change**, the toggle would show the wrong option to nearly every first-time visitor, not just the minority it affects today. | A toggle that visibly disagrees with the page underneath it looks broken, and undermines confidence in the rest of the change even though the actual theme shown is correct. |
+| **The toggle's own display glitch (§4, decision 2) is not fixed alongside this change**, so until issue #69 lands the toggle shows the wrong option to nearly every first-time visitor, not just the minority it affects today. Accepted. | A toggle that visibly disagrees with the page underneath it looks broken, and undermines confidence in the rest of the change even though the actual theme shown is correct. The exposure lasts as long as #69 trails this change. |
 | **Visitors without JavaScript, or with it blocked, don't get the new default at all** (§4, decision 4). | They keep following their device's own setting exactly as before — a narrow, already-existing gap this change doesn't close, worth knowing about so it isn't mistaken for a bug later. |
 
 ---
@@ -182,17 +177,17 @@ set to light, and it opens in dark.
 There is no third-party theme library in this app — no dependency is added or upgraded by
 this change. The existing mechanism is a small inline script that runs before the page
 paints, a CSS attribute the rest of the stylesheet already keys off, and a small Zustand
-store that only backs the toggle button's own icon and label. This spec touches all three,
-plus their existing tests and documentation, and nothing else.
+store that only backs the toggle button's own icon and label. This spec touches only the
+first — the inline script — plus a test of its logic. The store and the toggle are left
+alone; their display mismatch is issue #69 (§9.3).
 
 | File | Change |
 | --- | --- |
 | `src/app/layout.tsx` | The inline script's body (`THEME_SCRIPT`) changes so that whenever the visitor's stored preference is anything other than the literal strings `"light"` or `"dark"` — including no stored value at all — it sets `data-theme="dark"` on `<html>` directly, instead of leaving the attribute unset. It never writes to `localStorage` itself, only reads it, so applying the default is never recorded as if it were a choice (§9.1; §4, decision 1). |
-| `src/stores/ui-store.ts` | Gains one new action, `hydrate`, that copies whatever `data-theme` the script above already set on `<html>` into the store's own `theme` field, without touching `localStorage`. The store's hardcoded initial value of `"light"` is unchanged — it's now only ever the value visible for the instant before `hydrate` runs (§9.3). |
-| `src/components/common/theme-toggle.tsx` | Calls `hydrate()` once, in an effect that runs right after mount — the same point the component already waits for before rendering the real button in place of its placeholder. This is what makes the icon and label match the theme already on screen, including for a first-time visitor seeing the new dark default (§9.3; closes the defect recorded as C-12 in `intent/2026-09-16-ai-knowledge-graph-3d/spec.md`). |
-| `src/components/common/theme-toggle.test.tsx` | Gains a case: with `data-theme="dark"` already set on `document.documentElement` before the component mounts (standing in for the inline script having already run), the toggle renders showing "Switch to light theme" immediately, not the stale placeholder state. The existing click-toggle case is unchanged (§11, V-6, V-7). |
-| `src/hooks/use-theme-tokens.ts` | Its doc comment currently says the store "is never hydrated... so it does not describe the DOM." That's no longer accurate once `hydrate` exists, so the comment is updated to keep its conclusion — the scene still reads the DOM directly, never the store — on its real, current basis: the store is the toggle's own display state, not a general theme source of truth, not because it's broken (§9.4). |
-| `CLAUDE.md` | The existing note that `useUiStore` "hardcodes `theme: "light"` and never hydrates" is updated to describe the store's new, corrected behaviour, keeping the instruction not to use it for anything beyond the toggle (§9.4). |
+
+*Amended 2026-09-25:* rows for `ui-store.ts`, `theme-toggle.tsx`, `theme-toggle.test.tsx`,
+`use-theme-tokens.ts` and `CLAUDE.md`'s store note were removed with the toggle fix (C-3).
+All five stay exactly as they are; their existing statements about the store remain true.
 
 Nothing in `globals.css`, `palette.ts`, `colour.ts`, `layout.ts`, or anywhere under
 `src/lib/graph/` changes. Dark mode's actual colour values, and every validated
@@ -301,31 +296,26 @@ C-12): the graph scene itself was built to read the theme directly off the DOM i
 this store specifically because the store couldn't be trusted (`src/hooks/use-theme-tokens.ts`),
 and fixing the store itself was scoped out as "a separate small PR."
 
-This spec is that PR, folded in here rather than kept separate, because the two changes
-interact: before now, the mismatch only showed up for visitors whose device already preferred
-dark — a minority, and one nobody had prioritised fixing. Once dark is the default nearly
-everyone sees, the same mismatch would show up for nearly every first-time visitor instead
-(§4, decision 2).
+*Amended 2026-09-25:* this spec originally folded that PR in. It no longer does — the fix is
+issue #69, shipped on its own (C-3). The two changes interact: before now, the mismatch only
+showed up for visitors whose device already preferred dark. Once dark is the default nearly
+everyone sees, it shows up for nearly every first-time visitor, **until #69 lands** — the
+toggle offers "Switch to dark theme" over a page that is already dark, and the first click
+sets `"dark"` explicitly (a visible no-op) rather than switching to light. That is accepted.
+It does not affect FR-1–FR-5, FR-7 or FR-8: the theme on screen, and what is remembered, are
+correct throughout.
 
-The fix is additive and doesn't change the store's initial value or the scene's own
-DOM-reading approach: a new `hydrate` action reads `document.documentElement`'s already-set
-`data-theme` attribute and copies it into the store's `theme` field, without touching
-`localStorage` — this is reconciling the toggle's own display with a decision already made
-elsewhere (by the script in §9.1, or by an earlier explicit click), not making a new one.
-`theme-toggle.tsx` calls it once, in an effect that fires right after the component's existing
-mount check passes — the same point it already switches from its disabled placeholder to the
-real button. Because this runs in an effect, it never executes during server rendering, so it
-carries no risk of the store trying to read `document` before it exists.
+The approach sketched for #69 (a store `hydrate` action reading `data-theme` off `<html>`,
+called from the toggle's mount effect) is recorded on the issue, not specified here.
 
 #### 9.4 What does not change
 
 `globals.css`'s token values, `palette.contract.test.ts`, `code-highlight.contract.test.ts`,
 and everything under `src/lib/graph/` are untouched — this spec changes when a theme is
-chosen and how faithfully the toggle reports it, never what either theme actually looks like.
-`use-theme-tokens.ts` keeps reading the DOM directly rather than the store, for the same
-reason CLAUDE.md already states (the store is the toggle's own UI state, not a general
-description of the rendered page) — only the stale part of that reasoning (that the store is
-currently wrong) is updated, not the conclusion.
+chosen, never what either theme actually looks like. `ui-store.ts`, `theme-toggle.tsx`,
+`use-theme-tokens.ts` and CLAUDE.md's note on the store are untouched: the store still never
+hydrates, so everything already written about it stays accurate, and the scene keeps reading
+the DOM (which is now always explicitly set, and so still correct).
 
 #### 9.5 Non-graph pages in dark (§3, Q2)
 
@@ -339,8 +329,7 @@ something this spec verifies — see Areas of concern, C-1.
 ### 10. Security
 
 - **No new dependency, no new environment variable, no server-side code touched.** This
-  spec's entire surface is one inline script's literal body, one new store action, and one
-  effect call.
+  spec's entire surface is one inline script's literal body.
 - **The inline script still contains no interpolated value of any kind.** The only external
   input it ever reads is the visitor's own prior `localStorage` write, and that value is
   checked with a strict equality comparison against the two literal strings `"light"` and
@@ -364,7 +353,7 @@ something this spec verifies — see Areas of concern, C-1.
 | V-3 | A browser with `"theme": "light"` already stored opens the app in light, regardless of the device's own setting | Manual | pass |
 | V-4 | A browser with `"theme": "dark"` already stored opens the app in dark, regardless of the device's own setting (unaffected by this change) | Manual | pass |
 | V-5 | No visible flash of the wrong theme in any of V-1 through V-4 | Manual, on a throttled/slow load | pass |
-| V-6 | With `data-theme="dark"` already set on `document.documentElement` before mount, the toggle's very first render shows "Switch to light theme" and the sun icon — not the stale placeholder state | Unit test, `theme-toggle.test.tsx` (new case) | pass |
+| V-6 | *Moved to issue #69* (toggle first render matches `data-theme`) | — | — |
 | V-7 | The existing click-toggle case in `theme-toggle.test.tsx` still passes unmodified | Regression | pass |
 | V-8 | After a page loads with no stored preference, `localStorage.getItem("theme")` is still `null` — the default is never written back as if it were a choice | Unit/integration check | pass |
 | V-9 | With `localStorage.getItem` mocked to throw, the script still sets `data-theme="dark"` rather than leaving the attribute unset | Unit test on the script's logic | pass |
@@ -381,38 +370,31 @@ anywhere — every page keeps exactly the dark appearance it already has today �
 pages are about to become most new visitors' actual first impression of dark mode, rather
 than something only people who deliberately opted in ever saw. **Resolved here by shipping
 the existing dark appearance unchanged and unaudited beyond what's already validated for the
-graph and its code blocks.** **The decision needed from you:** say whether that's good enough
-to ship as-is, or whether a quick look at the home page and a topic page or two in dark,
-before or shortly after release, should happen first.
+graph and its code blocks.** **Decided 2026-09-25: dark is the default on all pages, shipped
+as-is** — no audit gates this change.
 
 **C-2 — Once a visitor touches the toggle at all, there's no way back to "just match my
 device"** (§3, Q3; §6, risk 3). The only way to return to that behaviour is clearing browser
 data or starting a fresh profile. **Resolved here by keeping the toggle at exactly two
 positions**, matching the intent's own instruction to keep the toggle as it is rather than
 adding a third state, which would be materially more work (a new remembered value, and a
-rethink of the script in §9.1 to handle three cases instead of two). **The decision needed
-from you:** confirm two positions are enough, or ask for a third "match my device" position —
-understood as a separate, larger piece of work, not something to fold into this one.
+rethink of the script in §9.1 to handle three cases instead of two). **Decided 2026-09-25:
+two positions are enough.**
 
-**C-3 — This spec fixes a small, already-known toggle display glitch that an earlier piece of
-work explicitly deferred to "a separate small PR," rather than leaving it for that separate
-PR** (§4, decision 2; §6, risk 4; §9.3). The conflict: shipping the new dark default without
-this fix would mean the toggle visibly shows the wrong option to nearly every first-time
-visitor, not just the minority it affects today. **Resolved here by fixing it as part of this
-same change**, since leaving it for "later" would mean shipping something visibly broken in
-the meantime. **The decision needed from you:** confirm this small addition to scope is fine,
-or explicitly ask for it to be pulled out into its own change — with the understanding that
-the toggle would then look wrong to most new visitors for however long the two pieces of work
-are apart.
+**C-3 — A small, already-known toggle display glitch, which an earlier piece of work deferred
+to "a separate small PR," stays in that separate PR** (§4, decision 2; §6, risk 4; §9.3).
+The conflict: shipping the new dark default without this fix means the toggle visibly shows
+the wrong option to nearly every first-time visitor, not just the minority it affects today.
+This spec originally folded the fix in. **Decided 2026-09-25: split out** into issue #69,
+accepting that the toggle looks wrong to most new visitors until it lands.
 
 **C-4 — A visitor who already comes back regularly today, on a light-preferring device, and
 has simply never touched the toggle, will see the site's whole look change the next time they
 open it after this ships, with nothing on screen explaining why** (§4, decision 3; §6, risk
 1). **Resolved here by treating this as the intended, accepted consequence of changing a
 default** — the intent's own framing already includes this group as affected, not as an edge
-case — and by not adding any one-time explanation for it. **The decision needed from you:**
-confirm a silent switch like that is fine, or ask for a small one-time notice the first time
-it happens.
+case — and by not adding any one-time explanation for it. **Decided 2026-09-25: the silent
+switch is fine.**
 
 **C-5 — Visitors without JavaScript, or with their browser blocking the site's ability to
 remember anything, don't get the new dark default at all** (§4, decision 4; §6, risk 5;
