@@ -51,7 +51,7 @@ built result. Step 6 is that look, and it is part of the work, not a follow-up.
 | `src/lib/graph/tree.test.ts` | Id assertions updated for the renamed root (`"ai"` → `"pd-ai"`, `"ai/n-node/…"` → `"pd-ai/n-node/…"`). **Not in the spec's §7 table — see Risks.** |
 | `src/lib/graph/types.ts`, `src/lib/graph/tree.ts` | Docstring id examples only, same rename. **Not in the spec's §7 table.** |
 | `CLAUDE.md` | `## Graph data` amended in place: hub/ring shape, the camera's restricted envelope, click framing a parent as well as children, and the new deepest-node id. |
-| `intent/graph-ring-readability/spec.md` | §7's file table extended with the three id-rename files above, and §9.6's claim that truncation already exists corrected. Same PR, per the skill's "keep it true" rule. |
+| `intent/2026-09-17-graph-ring-readability/spec.md` | §7's file table extended with the three id-rename files above, and §9.6's claim that truncation already exists corrected. Same PR, per the skill's "keep it true" rule. |
 
 Nothing else changes. `src/lib/graph/**` stays framework-agnostic — plain numbers, no
 `three`, no `app/`, no `components/`. `graph-scene.tsx` stays the only place that owns

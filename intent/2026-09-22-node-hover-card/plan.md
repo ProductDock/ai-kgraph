@@ -248,7 +248,7 @@ partial revert. Stated so nobody tries the partial one under pressure.
 
 **R-6 — Nothing here narrows the accessibility gap, and it widens what is behind it**
 (C-4, accepted). The card is `aria-hidden` and unreachable by keyboard, the same posture
-the label layer has. `intent/graph-accessibility/` is where this is tracked; this plan does
+the label layer has. `intent/2026-09-17-graph-accessibility/` is where this is tracked; this plan does
 not accelerate it, per the decision recorded above.
 
 **What this breaks: nothing that exists today**, on the working-tree baseline. No existing

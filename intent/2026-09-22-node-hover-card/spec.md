@@ -190,7 +190,7 @@ it disappears.
 | **The hub and every ring topic will show "Unassigned" / "Todo" by default**, since nobody is likely to author a status for a category rather than a piece of work (§3, Q3). | This may read as odd or as an oversight the first time someone hovers the hub itself, rather than as the deliberate "every node, no exceptions" decision it actually is. |
 | **Rapid hover across a dense cluster of nodes could make cards flash on and off** in quick succession while the viewer is just moving the pointer toward something else (§4, D-4). | Nothing today produces a full card's worth of content on a fast hover pass — only a small scale change — so this is a new kind of visual noise, not a repeat of an existing one. |
 | **The inert "Open page" row is new surface for a viewer to try to click**, and confusion is possible even with the muted treatment this spec specifies (§3, Q1; §4, D-3). | It's flagged rather than solved further, since the intent is explicit that building the real destination is out of scope for this piece of work. |
-| **This narrows the accessibility gap the graph already carries, in the wrong direction.** The graph's inability to be used by keyboard or screen reader is known, separately tracked debt (`intent/graph-accessibility/`) — until now it meant "you can't get a node's name any other way." After this ships, it also means "you can't get who owns it or whether it's done any other way" (Areas of concern, C-4). | Nothing here fixes that gap — this spec doesn't attempt to — but it does mean more information becomes unreachable that way, not the same amount. |
+| **This narrows the accessibility gap the graph already carries, in the wrong direction.** The graph's inability to be used by keyboard or screen reader is known, separately tracked debt (`intent/2026-09-17-graph-accessibility/`) — until now it meant "you can't get a node's name any other way." After this ships, it also means "you can't get who owns it or whether it's done any other way" (Areas of concern, C-4). | Nothing here fixes that gap — this spec doesn't attempt to — but it does mean more information becomes unreachable that way, not the same amount. |
 
 ---
 
@@ -449,7 +449,7 @@ question raised as an alternative.
 
 **C-4 — This feature makes the graph's known accessibility gap wider, not just
 unchanged.** The graph's inability to be used by keyboard or screen reader is
-pre-existing, tracked debt (`intent/graph-accessibility/`, opened by the base spec on
+pre-existing, tracked debt (`intent/2026-09-17-graph-accessibility/`, opened by the base spec on
 purpose, not by accident). Before this feature, that gap meant a keyboard or screen-reader
 user couldn't get a node's *name* any way but reading the page's static chrome. After this
 feature, the same gap also means they can't get who owns a topic or whether it's done —

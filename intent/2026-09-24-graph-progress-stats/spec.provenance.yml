@@ -1,4 +1,4 @@
-intent: intent/graph-progress-stats/intent.md
+intent: intent/2026-09-24-graph-progress-stats/intent.md
 generated_at: 2026-09-24T06:58:38Z
 model: claude-sonnet-5
 workflow_run: https://github.com/ProductDock/ai-kgraph/actions/runs/35966368678

@@ -1,4 +1,4 @@
-intent: intent/ai-knowledge-graph-3d/intent.md
+intent: intent/2026-09-16-ai-knowledge-graph-3d/intent.md
 generated_at: 2026-09-16T06:44:43Z
 model: claude-opus-5
 workflow_run: https://github.com/ProductDock/ai-kgraph/actions/runs/35064135058

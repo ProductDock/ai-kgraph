@@ -163,7 +163,7 @@ That is the whole of it. Nodes, edges, labels, 3D.
   be carried forward as debt rather than quietly forgotten.
 - **The page lives at `/graph`.** The home page is left free for an introduction or
   landing page later.
-- Must fit the app baseline already merged in `intent/nextjs-project-baseline` — the
+- Must fit the app baseline already merged in `intent/2026-09-09-nextjs-project-baseline` — the
   existing directory rules, state-management rules and environment-variable rules in
   `CLAUDE.md` apply.
 - No deadline.

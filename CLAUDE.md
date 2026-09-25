@@ -106,14 +106,14 @@ changes no file in it.
   all-pairs colour separation, not the adjacent-pairs kind a chart needs — and only four of
   the eight hues clear that. **A fifth top-level topic breaks it silently**: the assignment
   wraps rather than failing the build. That is a known, accepted limit
-  (`intent/graph-branch-colour-and-size/spec.md`, C-2), not an oversight.
+  (`intent/2026-09-19-graph-branch-colour-and-size/spec.md`, C-2), not an oversight.
 - **`GROUP_RADIUS` is bounded by a test, not by taste.** `layout.test.ts` floors every node
   pair's centre distance at 2.5× the larger radius, and deep groups — which took the
   _smallest_ radii under the old ramp — now take this one. Measured, the closest pair
   involving a group sits 3.59 apart in the 148-node synthetic seed, so anything past ~1.44
   fails that test. It is at 1.05. Both of those distances scale with the layout's spacing
   constants and `GROUP_RADIUS` does not, so tightening the tree again lowers that ceiling.
-- **The shape is a hub, a ring, and branches growing outward** (`intent/graph-ring-readability/`).
+- **The shape is a hub, a ring, and branches growing outward** (`intent/2026-09-17-graph-ring-readability/`).
   Depth 1 is placed on one horizontal circle at `RING_RADIUS`, with the azimuth split
   **evenly** between topics regardless of what each carries — the one place the layout's
   "room in proportion to your subtree" rule is deliberately not applied, because the ring
@@ -140,8 +140,8 @@ changes no file in it.
   what the thing you clicked hangs off. The root has no parent and keeps its own framing.
 - The seed schema is `.strict()`: unknown keys fail the build. It holds **`name` and
   `children` and nothing else.** `status` and `assignee` arrived in the seed with
-  `intent/node-hover-card/` and **have left it again** for content frontmatter
-  (`intent/node-content-pages/`); on a seed node they are now unknown keys, and the build
+  `intent/2026-09-22-node-hover-card/` and **have left it again** for content frontmatter
+  (`intent/2026-09-23-node-content-pages/`); on a seed node they are now unknown keys, and the build
   fails naming the node. `GraphNode` no longer carries them either — they are resolved in
   `content.ts`, not `flatten()`, and `buildScene()` copies them onto `GraphSceneNode`, so
   the card and the scene read the same two fields they always did. Every node still gets
@@ -251,7 +251,7 @@ changes no file in it.
   own circle, never on it**: `labelOffsetPx` in `graph-labels.tsx` projects the node's
   _drawn_ radius (base radius × its live hover/focus scale) to screen pixels and adds a
   proportional gap, so a hovered circle cannot grow into its own name — and the hub is not
-  an exception (`intent/graph-labels-under-nodes/`).
+  an exception (`intent/2026-09-19-graph-labels-under-nodes/`).
 - **The label pool is keyed by node id, and its membership is frozen while the camera
   moves.** Both halves exist for the same reason: `selectLabelled` ranks by distance to
   the camera, so mid-fly-to that ranking churns every frame. A pool keyed by array
@@ -307,7 +307,7 @@ changes no file in it.
   alone — no rows, no link. Opening one forces the label pass open (`lastLabelsAt = 0`) as well as calling
   `invalidate()`: the throttle would otherwise swallow the one frame the card had to be
   placed in, and it would sit unplaced for good.
-- **The stats panel counts topics, not nodes** (`intent/graph-progress-stats/`).
+- **The stats panel counts topics, not nodes** (`intent/2026-09-24-graph-progress-stats/`).
   `computeGraphStats()` runs inside `buildScene()` and excludes the hub
   (`parentId === null`): the hub can't carry a status (`content/index.md` fails the
   build), so counting it would keep 100% out of reach. A group marked Done counts as Done
@@ -328,7 +328,7 @@ changes no file in it.
   once, because Strict Mode mounts the scene's effect twice in development.
 - **Accessibility of the scene is known, recorded debt**, not an oversight: the canvas is
   unreachable by keyboard and opaque to a screen reader. The page _chrome_ meets WCAG 2.2
-  AA. See `intent/graph-accessibility/intent.md`.
+  AA. See `intent/2026-09-17-graph-accessibility/intent.md`.
 
 ## Pitfalls
 

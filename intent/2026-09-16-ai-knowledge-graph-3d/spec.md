@@ -33,7 +33,7 @@ in-app editing, no API route, no server action and no new environment variable. 
 topic is a file edit and a PR.
 
 This is the first product surface in an app that until now shipped only a baseline
-(`intent/nextjs-project-baseline`). Everything the reference app does beyond the graph
+(`intent/2026-09-09-nextjs-project-baseline`). Everything the reference app does beyond the graph
 itself — status, assignees, popups, per-topic pages, the sidebar, filtering — is out of
 scope by explicit instruction of the intent and must not be designed or stubbed here.
 

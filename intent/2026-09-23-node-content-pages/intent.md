@@ -127,7 +127,7 @@ The text for these pages should live in the repository as markdown files in a
   must stay see-through to pointer events, so an orbit drag that starts over a card
   still turns the scene.
 - **Single click on a node still focuses the camera**, unchanged.
-- This overrides one decision from `intent/node-hover-card/`: the hub no longer shows
+- This overrides one decision from `intent/2026-09-22-node-hover-card/`: the hub no longer shows
   assignee or status. The originator chose this knowingly.
 
 ## Open questions
